@@ -1,0 +1,52 @@
+package com.lionapple.user;
+
+import com.lionapple.common.ApiResult;
+import com.lionapple.user.dto.LoginRequest;
+import com.lionapple.user.dto.LoginResponse;
+import com.lionapple.user.dto.ProfileRequest;
+import com.lionapple.user.dto.UserMeResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/user")
+@Tag(name = "User", description = "사용자 API")
+public class UserController {
+
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+
+    @PostMapping("/google")
+    @Operation(summary = "구글 로그인")
+    public LoginResponse googleLogin() {
+        return userService.googleLogin();
+    }
+
+    @PostMapping("/profile")
+    @Operation(summary = "농가 정보 입력")
+    public ApiResult saveProfile(@Valid @RequestBody ProfileRequest request) {
+        userService.saveProfile(request);
+        return ApiResult.success();
+    }
+
+    @PostMapping("/login")
+    @Operation(summary = "로그인")
+    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
+        return userService.login(request);
+    }
+
+    @GetMapping("/me")
+    @Operation(summary = "사용자 정보 조회")
+    public UserMeResponse me() {
+        return userService.me();
+    }
+}
