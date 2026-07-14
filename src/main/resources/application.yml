@@ -25,3 +25,8 @@ google:
   oauth:
     client-id: 964129047813-hdnng4fd73r6cmvt5mid5u6ime9d6l39.apps.googleusercontent.com
     client-secret: ${GOOGLE_CLIENT_SECRET:}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:hipapple-local-development-jwt-secret-change-me}
+    expiration-seconds: 86400

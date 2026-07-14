@@ -22,6 +22,7 @@ Google OAuth Client ID는 `application.yml`에 설정되어 있습니다. Client
 
 ```powershell
 $env:GOOGLE_CLIENT_SECRET="your-google-client-secret"
+$env:JWT_SECRET="your-long-random-jwt-secret"
 ```
 
 MySQL 데이터베이스는 기본값으로 `localhost:3306/lion_apple`을 사용합니다.
@@ -38,7 +39,7 @@ DB 계정 정보는 [application.yml](src/main/resources/application.yml)에서 
 
 | Method | Endpoint | 설명 | 구현 응답 |
 | --- | --- | --- | --- |
-| POST | `/user/google` | 구글 로그인 | `{ "accessToken": "jwt-google-demo-token" }` |
+| POST | `/user/google` | Google ID Token 검증 후 로그인 | `{ "accessToken": "jwt..." }` |
 | POST | `/user/profile` | 농가 정보 입력 | `{ "result": "Success" }` |
 | GET | `/user/me` | 사용자 정보 조회 | `{ "id": 1, "name": "박주아" }` |
 
@@ -46,9 +47,11 @@ DB 계정 정보는 [application.yml](src/main/resources/application.yml)에서 
 
 ```json
 {
-  "idToken": "google-id-token"
+  "idToken": "google-id-token-from-frontend"
 }
 ```
+
+`idToken`은 프런트에서 Google 로그인 성공 후 받은 `response.credential` 값을 전달합니다. 백엔드는 Google ID Token의 서명, audience, issuer, 만료시간을 검증한 뒤 우리 서비스 JWT accessToken을 발급합니다.
 
 ### Storage
 

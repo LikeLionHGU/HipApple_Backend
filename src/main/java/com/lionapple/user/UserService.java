@@ -12,13 +12,30 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserProfileRepository userProfileRepository;
+    private final UserAccountRepository userAccountRepository;
+    private final GoogleTokenVerifier googleTokenVerifier;
+    private final JwtTokenProvider jwtTokenProvider;
 
-    public UserService(UserProfileRepository userProfileRepository) {
+    public UserService(
+            UserProfileRepository userProfileRepository,
+            UserAccountRepository userAccountRepository,
+            GoogleTokenVerifier googleTokenVerifier,
+            JwtTokenProvider jwtTokenProvider
+    ) {
         this.userProfileRepository = userProfileRepository;
+        this.userAccountRepository = userAccountRepository;
+        this.googleTokenVerifier = googleTokenVerifier;
+        this.jwtTokenProvider = jwtTokenProvider;
     }
 
+    @Transactional
     public LoginResponse googleLogin(GoogleLoginRequest request) {
-        return new LoginResponse("jwt-google-demo-token");
+        var googleUserInfo = googleTokenVerifier.verify(request.idToken());
+        UserAccount userAccount = userAccountRepository.findByGoogleSubject(googleUserInfo.subject())
+                .orElseGet(() -> new UserAccount(googleUserInfo));
+        userAccount.updateLoginInfo(googleUserInfo);
+        UserAccount savedUserAccount = userAccountRepository.save(userAccount);
+        return new LoginResponse(jwtTokenProvider.createAccessToken(savedUserAccount));
     }
 
     @Transactional

@@ -13,3 +13,8 @@ google:
   oauth:
     client-id: test-google-client-id.apps.googleusercontent.com
     client-secret:
+
+app:
+  jwt:
+    secret: test-jwt-secret-key-for-hipapple-backend-tests
+    expiration-seconds: 86400

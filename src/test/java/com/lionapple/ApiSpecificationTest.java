@@ -1,6 +1,9 @@
 package com.lionapple;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -12,8 +15,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+
+import com.lionapple.user.GoogleTokenVerifier;
+import com.lionapple.user.dto.GoogleUserInfo;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -22,13 +29,19 @@ class ApiSpecificationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @MockBean
+    private GoogleTokenVerifier googleTokenVerifier;
+
     @Test
     void userApisMatchSpecification() throws Exception {
+        when(googleTokenVerifier.verify(eq("google-id-token")))
+                .thenReturn(new GoogleUserInfo("google-sub-1", "jua@example.com", "박주아", "https://example.com/profile.png"));
+
         mockMvc.perform(post("/user/google")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"idToken\":\"google-id-token\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").exists());
+                .andExpect(jsonPath("$.accessToken", matchesPattern("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$")));
 
         mockMvc.perform(post("/user/profile")
                         .contentType(MediaType.APPLICATION_JSON)
