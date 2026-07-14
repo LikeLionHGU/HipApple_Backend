@@ -1,6 +1,6 @@
 package com.lionapple.user;
 
-import com.lionapple.user.dto.LoginRequest;
+import com.lionapple.user.dto.GoogleLoginRequest;
 import com.lionapple.user.dto.LoginResponse;
 import com.lionapple.user.dto.ProfileRequest;
 import com.lionapple.user.dto.UserMeResponse;
@@ -17,7 +17,7 @@ public class UserService {
         this.userProfileRepository = userProfileRepository;
     }
 
-    public LoginResponse googleLogin() {
+    public LoginResponse googleLogin(GoogleLoginRequest request) {
         return new LoginResponse("jwt-google-demo-token");
     }
 
@@ -27,10 +27,6 @@ public class UserService {
                 .orElseGet(() -> new UserProfile(request));
         profile.update(request);
         userProfileRepository.save(profile);
-    }
-
-    public LoginResponse login(LoginRequest request) {
-        return new LoginResponse("jwt-demo-token");
     }
 
     public UserMeResponse me() {

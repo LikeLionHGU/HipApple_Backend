@@ -20,3 +20,8 @@ server:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+google:
+  oauth:
+    client-id: 964129047813-hdnng4fd73r6cmvt5mid5u6ime9d6l39.apps.googleusercontent.com
+    client-secret: ${GOOGLE_CLIENT_SECRET:}

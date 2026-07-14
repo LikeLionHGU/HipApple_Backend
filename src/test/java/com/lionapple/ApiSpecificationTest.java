@@ -24,7 +24,9 @@ class ApiSpecificationTest {
 
     @Test
     void userApisMatchSpecification() throws Exception {
-        mockMvc.perform(post("/user/google"))
+        mockMvc.perform(post("/user/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idToken\":\"google-id-token\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").exists());
 
@@ -41,12 +43,6 @@ class ApiSpecificationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("Success"));
-
-        mockMvc.perform(post("/user/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginId\":\"jua\",\"password\":\"1234\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").exists());
 
         mockMvc.perform(get("/user/me"))
                 .andExpect(status().isOk())
@@ -105,7 +101,7 @@ class ApiSpecificationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['/user/google'].post").exists())
                 .andExpect(jsonPath("$.paths['/user/profile'].post").exists())
-                .andExpect(jsonPath("$.paths['/user/login'].post").exists())
+                .andExpect(jsonPath("$.paths['/user/login']").doesNotExist())
                 .andExpect(jsonPath("$.paths['/user/me'].get").exists())
                 .andExpect(jsonPath("$.paths['/storage'].post").exists())
                 .andExpect(jsonPath("$.paths['/storage'].get").exists())

@@ -1,7 +1,7 @@
 package com.lionapple.user;
 
 import com.lionapple.common.ApiResult;
-import com.lionapple.user.dto.LoginRequest;
+import com.lionapple.user.dto.GoogleLoginRequest;
 import com.lionapple.user.dto.LoginResponse;
 import com.lionapple.user.dto.ProfileRequest;
 import com.lionapple.user.dto.UserMeResponse;
@@ -27,8 +27,8 @@ public class UserController {
 
     @PostMapping("/google")
     @Operation(summary = "구글 로그인")
-    public LoginResponse googleLogin() {
-        return userService.googleLogin();
+    public LoginResponse googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+        return userService.googleLogin(request);
     }
 
     @PostMapping("/profile")
@@ -36,12 +36,6 @@ public class UserController {
     public ApiResult saveProfile(@Valid @RequestBody ProfileRequest request) {
         userService.saveProfile(request);
         return ApiResult.success();
-    }
-
-    @PostMapping("/login")
-    @Operation(summary = "로그인")
-    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
-        return userService.login(request);
     }
 
     @GetMapping("/me")

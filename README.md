@@ -18,6 +18,12 @@ Swagger UI는 서버 실행 후 아래 주소에서 확인할 수 있습니다.
 http://localhost:8080/swagger-ui.html
 ```
 
+Google OAuth Client ID는 `application.yml`에 설정되어 있습니다. Client Secret은 저장소에 직접 커밋하지 않고 환경변수로 주입합니다.
+
+```powershell
+$env:GOOGLE_CLIENT_SECRET="your-google-client-secret"
+```
+
 MySQL 데이터베이스는 기본값으로 `localhost:3306/lion_apple`을 사용합니다.
 
 ```sql
@@ -34,8 +40,15 @@ DB 계정 정보는 [application.yml](src/main/resources/application.yml)에서 
 | --- | --- | --- | --- |
 | POST | `/user/google` | 구글 로그인 | `{ "accessToken": "jwt-google-demo-token" }` |
 | POST | `/user/profile` | 농가 정보 입력 | `{ "result": "Success" }` |
-| POST | `/user/login` | 로그인 | `{ "accessToken": "jwt-demo-token" }` |
 | GET | `/user/me` | 사용자 정보 조회 | `{ "id": 1, "name": "박주아" }` |
+
+## 구글 로그인 요청 예시
+
+```json
+{
+  "idToken": "google-id-token"
+}
+```
 
 ### Storage
 
