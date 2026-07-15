@@ -5,6 +5,7 @@ import java.util.List;
 import com.lionapple.common.ApiResult;
 import com.lionapple.common.auth.CurrentUserId;
 import com.lionapple.storage.dto.StorageDetailResponse;
+import com.lionapple.storage.dto.StorageNameResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +42,12 @@ public class StorageController {
     @Operation(summary = "전체 저장고 조회")
     public List<StorageSummaryResponse> findAll(@CurrentUserId Long userId) {
         return storageService.findAll(userId);
+    }
+
+    @GetMapping("/me")
+    @Operation(summary = "저장고 이름 조회")
+    public StorageNameResponse myStorageName(@CurrentUserId Long userId) {
+        return storageService.findMyStorageName(userId);
     }
 
     @GetMapping("/{storageId}")

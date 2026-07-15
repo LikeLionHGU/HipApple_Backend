@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 import com.lionapple.storage.dto.StorageDetailResponse;
+import com.lionapple.storage.dto.StorageNameResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,12 @@ public class StorageService {
     @Transactional
     public void create(Long userId, StorageRequest request) {
         storageRepository.save(new Storage(userId, request));
+    }
+
+    public StorageNameResponse findMyStorageName(Long userId) {
+        return storageRepository.findFirstByUserIdOrderByStorageIdAsc(userId)
+                .map(storage -> new StorageNameResponse(storage.getName()))
+                .orElseThrow(() -> new NoSuchElementException("저장고를 찾을 수 없습니다."));
     }
 
     public List<StorageSummaryResponse> findAll(Long userId) {

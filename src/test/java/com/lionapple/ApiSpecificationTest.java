@@ -102,6 +102,11 @@ class ApiSpecificationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("Success"));
 
+        mockMvc.perform(get("/storage/me")
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("저장고A"));
+
         mockMvc.perform(get("/storage")
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())

@@ -10,4 +10,6 @@ public interface StorageRepository extends JpaRepository<Storage, Long> {
     List<Storage> findAllByUserId(Long userId);
 
     Optional<Storage> findByStorageIdAndUserId(Long storageId, Long userId);
+
+    Optional<Storage> findFirstByUserIdOrderByStorageIdAsc(Long userId);
 }
