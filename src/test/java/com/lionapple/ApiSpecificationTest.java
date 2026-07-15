@@ -73,7 +73,7 @@ class ApiSpecificationTest {
         mockMvc.perform(get("/user/me")
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.id").isNumber())
                 .andExpect(jsonPath("$.name").value("부사 농가"));
     }
 
@@ -180,6 +180,24 @@ class ApiSpecificationTest {
                 .andExpect(jsonPath("$.matchedBy").exists())
                 .andExpect(jsonPath("$.unit").value("원/kg"))
                 .andExpect(jsonPath("$.forecast[0].price").exists());
+    }
+
+    @Test
+    void loginResponseMarksNewAndExistingUser() throws Exception {
+        when(googleTokenVerifier.verify(eq("fresh-google-id-token")))
+                .thenReturn(new GoogleUserInfo("google-sub-fresh", "fresh@example.com", "신규유저", null));
+
+        mockMvc.perform(post("/user/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idToken\":\"fresh-google-id-token\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isNewUser").value(true));
+
+        mockMvc.perform(post("/user/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idToken\":\"fresh-google-id-token\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isNewUser").value(false));
     }
 
     @Test

@@ -33,11 +33,12 @@ public class UserService {
     @Transactional
     public LoginResponse googleLogin(GoogleLoginRequest request) {
         var googleUserInfo = googleTokenVerifier.verify(request.idToken());
-        UserAccount userAccount = userAccountRepository.findByGoogleSubject(googleUserInfo.subject())
-                .orElseGet(() -> new UserAccount(googleUserInfo));
+        var existingAccount = userAccountRepository.findByGoogleSubject(googleUserInfo.subject());
+        boolean isNewUser = existingAccount.isEmpty();
+        UserAccount userAccount = existingAccount.orElseGet(() -> new UserAccount(googleUserInfo));
         userAccount.updateLoginInfo(googleUserInfo);
         UserAccount savedUserAccount = userAccountRepository.save(userAccount);
-        return new LoginResponse(jwtTokenProvider.createAccessToken(savedUserAccount));
+        return new LoginResponse(jwtTokenProvider.createAccessToken(savedUserAccount), isNewUser);
     }
 
     @Transactional

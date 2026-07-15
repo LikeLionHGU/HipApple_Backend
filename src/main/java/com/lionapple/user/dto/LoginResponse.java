@@ -1,4 +1,7 @@
 package com.lionapple.user.dto;
 
-public record LoginResponse(String accessToken) {
+public record LoginResponse(
+        String accessToken,
+        boolean isNewUser
+) {
 }
