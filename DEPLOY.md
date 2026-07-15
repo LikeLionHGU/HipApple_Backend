@@ -110,9 +110,15 @@ curl http://localhost:8080/v3/api-docs  # JSON 나오면 성공
 ## 7. Python AI 서버 + 예측 배치 (시장가격/예측 API용)
 
 - `ai-server/` 폴더를 EC2에 두고 venv 구성: `python3.11 -m venv venv && ./venv/bin/pip install -r requirements.txt`
+  (**scikit-learn은 1.9.0 고정** — v2 모델 로드 버전 일치 필요)
 - `/api/price/dashboard`(구 대시보드)는 uvicorn 서버(8000 포트, systemd `hipapple-ai`)가 처리
-- `/price/options`, `/price/forecast`, `/price/me`(신규 예측 API)는 **매일 06:10 KST 배치**
+- `/price/options`, `/price/forecast`, `/price/me`(예측 API)는 **매일 06:10 KST 배치**
   (`batch_forecast.py`, systemd `hipapple-batch.timer`)가 만든 `out/forecasts.json`을 Java가 읽어서 응답
+- 예측은 ML팀 v2 파이프라인(`ai-server/ml/` — `common_hist.build_daily_ext` 피처 +
+  `models/final_daily_model2.joblib`) 사용
+- ⚠️ `ml/data/apple_history_raw.csv`(2021~2023 정적 히스토리, 55MB)와
+  `ml/data/apple_auction_raw.csv`(현행 누적)는 git에 없음 — ML팀 배포 zip(`ml_deploy_v2.zip`)에서
+  가져와 서버 `ml/data/`에 넣어야 함. 히스토리 파일은 삭제 금지(피처 기준 유지용)
 - 필요한 환경변수(`/etc/hipapple.env`): `MARKET_API_KEY`(공공데이터포털 인증키),
   `FORECAST_FILE=/home/ec2-user/ai-server/out/forecasts.json`
 - 배치 수동 실행: `sudo systemctl start hipapple-batch` / 로그: `journalctl -u hipapple-batch`

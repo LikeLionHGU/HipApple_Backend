@@ -1,165 +1,92 @@
-"""매일 1회 실행되는 예측 배치.
+"""매일 1회 실행되는 예측 배치 (v2 — ML팀 파이프라인 사용).
 
-1. 공공데이터 API에서 최근 사과 경락 데이터를 수집해 SQLite에 누적
+1. 공공데이터 API에서 최근 사과 경락 데이터를 수집해 ml/data/apple_auction_raw.csv 에 누적
    (API가 최근 약 30일만 보관하므로 매일 쌓는 것이 핵심)
-2. (시장 x 품종)별 lag/roll 피처를 재계산
-3. final_daily_model.joblib 으로 향후 7거래일 recursive 예측
-4. 신뢰범위를 부여해 forecasts.json 으로 저장 (Java 백엔드가 조회 전용으로 사용)
+2. ml/common_hist.build_daily_ext() 로 학습과 동일한 피처 생성
+   (2021~2023 히스토리 + 계절성 피처 포함 — t_index 기준이 히스토리 시작일)
+3. ml/models/final_daily_model2.joblib 으로 향후 7거래일 recursive 예측
+4. 신뢰범위를 부여해 out/forecasts.json 으로 저장 (Java 백엔드가 조회 전용으로 사용)
 """
 import json
+import math
 import os
-import sqlite3
 import statistics
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import joblib
 import pandas as pd
-import requests
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data", "daily_price.sqlite")
-MODEL_PATH = os.path.join(BASE_DIR, "final_daily_model.joblib")
-OUT_PATH = os.path.join(BASE_DIR, "out", "forecasts.json")
+BASE = os.path.dirname(os.path.abspath(__file__))
+ML_DIR = os.path.join(BASE, "ml")
+sys.path.insert(0, ML_DIR)
 
-MARKET_API_URL = "https://apis.data.go.kr/B552845/katRealTime2/trades2"
-MARKET_API_KEY = os.getenv("MARKET_API_KEY", "")
-APPLE_LCLSF_CD = "06"  # 과실류
-APPLE_MCLSF_CD = "01"  # 사과
+import common            # noqa: E402  (ml 패키지 — RAW_CSV 경로 등)
+import common_hist as ch  # noqa: E402  (학습과 동일한 피처 파이프라인)
+import download_data as dl  # noqa: E402  (fetch_page 재사용)
+
+MODEL_PATH = os.path.join(ML_DIR, "models", "final_daily_model2.joblib")
+OUT_PATH = os.path.join(BASE, "out", "forecasts.json")
 
 KST = timezone(timedelta(hours=9))
 BACKFILL_DAYS = 30     # API 보관기간
-MIN_HISTORY = 8        # 예측에 필요한 최소 거래일 수
+MIN_HISTORY = 8        # 예측에 필요한 최소 거래일 수 (현행 데이터 기준)
 HISTORY_DAYS = 14      # 응답에 포함할 최근 실제 시세 일수
 FORECAST_HORIZON = 7   # 예측 거래일 수
 
 
-def _get_api(params, retries=2):
-    for attempt in range(retries + 1):
-        try:
-            resp = requests.get(MARKET_API_URL, params=params, timeout=20)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            if attempt == retries:
-                raise
-            time.sleep(1)
-
-
 def fetch_day_rows(day: str):
-    """해당 일자의 전국 사과 경락 원천 데이터를 전부 수집."""
-    rows, page = [], 1
-    while page <= 10:  # 안전 상한 (사과는 하루 5천건 내외)
-        params = {
-            "serviceKey": MARKET_API_KEY,
-            "cond[trd_clcln_ymd::EQ]": day,
-            "cond[gds_lclsf_cd::EQ]": APPLE_LCLSF_CD,
-            "cond[gds_mclsf_cd::EQ]": APPLE_MCLSF_CD,
-            "numOfRows": 1000,
-            "pageNo": page,
-            "returnType": "json",
-        }
-        body = _get_api(params)["response"]["body"]
-        items = body.get("items") or {}
-        page_rows = items.get("item") or []
-        if isinstance(page_rows, dict):
-            page_rows = [page_rows]
-        rows.extend(page_rows)
-        if page * 1000 >= int(body.get("totalCount", 0)):
-            break
-        page += 1
+    """해당 일자의 전국 사과 경락 원천 데이터 전체 (download_data.fetch_page 재사용)."""
+    first, total = dl.fetch_page(day, 1)
+    rows = list(first)
+    pages = (total + dl.NUM_ROWS - 1) // dl.NUM_ROWS
+    for p in range(2, pages + 1):
+        more, _ = dl.fetch_page(day, p)
+        rows.extend(more)
+        time.sleep(0.15)
     return rows
 
 
-def aggregate_day(day: str):
-    """일자 데이터를 (시장, 품종) 단위로 집계: vwap(원/kg), 거래량(kg), 건수."""
-    acc = {}
-    for r in fetch_day_rows(day):
-        try:
-            prc = float(r["scsbd_prc"])
-            unit_kg = float(r["unit_qty"])
-            qty = float(r["qty"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if prc <= 0 or unit_kg <= 0 or qty <= 0 or (r.get("unit_nm") or "kg") != "kg":
-            continue
-        key = (r.get("whsl_mrkt_nm") or "", r.get("gds_sclsf_nm") or "사과")
-        won, kg, n = acc.get(key, (0.0, 0.0, 0))
-        acc[key] = (won + prc * qty, kg + unit_kg * qty, n + 1)
-    return [
-        (day, market, variety, round(won / kg, 2), round(kg, 1), n)
-        for (market, variety), (won, kg, n) in acc.items()
-        if kg > 0
-    ]
-
-
-def ensure_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS daily_price (
-            trade_date TEXT NOT NULL,
-            market     TEXT NOT NULL,
-            variety    TEXT NOT NULL,
-            vwap       REAL NOT NULL,
-            volume_kg  REAL NOT NULL,
-            n_trades   INTEGER NOT NULL,
-            PRIMARY KEY (trade_date, market, variety)
-        )
-    """)
-    return conn
-
-
-def collect(conn):
-    """최근 BACKFILL_DAYS 중 DB에 없는 날짜 + 최근 2일(당일 데이터 갱신)을 수집."""
+def update_auction_csv():
+    """ml/data/apple_auction_raw.csv 를 오늘까지 증분 갱신 (기존 데이터 유지·누적)."""
     today = datetime.now(KST).date()
-    have = {r[0] for r in conn.execute("SELECT DISTINCT trade_date FROM daily_price")}
-    targets = []
-    for i in range(BACKFILL_DAYS):
-        d = (today - timedelta(days=i)).strftime("%Y-%m-%d")
-        if d not in have or i <= 1:
-            targets.append(d)
-    for day in sorted(targets):
+    if os.path.exists(common.RAW_CSV):
+        df = pd.read_csv(common.RAW_CSV, low_memory=False)
+        max_day = str(df["trd_clcln_ymd"].max())
+        # 마지막 이틀은 당일 갱신분이 있을 수 있어 다시 수집
+        start = max(date.fromisoformat(max_day) - timedelta(days=1),
+                    today - timedelta(days=BACKFILL_DAYS))
+    else:
+        df = pd.DataFrame()
+        start = today - timedelta(days=BACKFILL_DAYS)
+
+    new_rows = []
+    d = start
+    while d <= today:
+        day = d.isoformat()
         try:
-            recs = aggregate_day(day)
+            rows = fetch_day_rows(day)
+            print(f"[collect] {day}: {len(rows)}건")
+            new_rows.extend(rows)
         except Exception as e:
             print(f"[collect] {day} 수집 실패: {e}", file=sys.stderr)
-            continue
-        conn.execute("DELETE FROM daily_price WHERE trade_date = ?", (day,))
-        conn.executemany(
-            "INSERT OR REPLACE INTO daily_price VALUES (?,?,?,?,?,?)", recs)
-        conn.commit()
-        print(f"[collect] {day}: {len(recs)}개 (시장x품종) 저장")
+        d += timedelta(days=1)
+
+    if new_rows:
+        new_df = pd.DataFrame(new_rows)
+        if len(df) > 0:
+            df = df[df["trd_clcln_ymd"] < start.isoformat()]
+            df = pd.concat([df, new_df], ignore_index=True)
+        else:
+            df = new_df
+        df.drop_duplicates(inplace=True)
+        os.makedirs(os.path.dirname(common.RAW_CSV), exist_ok=True)
+        df.to_csv(common.RAW_CSV, index=False, encoding="utf-8-sig")
+        print(f"[collect] 저장: {common.RAW_CSV} (총 {len(df):,}행)")
 
 
-def build_features_row(prices, vols, ns, dow, t_index, medians):
-    """직전까지의 시계열로 다음 거래일 예측용 피처 1행을 만든다."""
-    def mean(xs):
-        return sum(xs) / len(xs) if xs else None
-
-    lag1 = prices[-1] if len(prices) >= 1 else None
-    lag2 = prices[-2] if len(prices) >= 2 else None
-    lag3 = prices[-3] if len(prices) >= 3 else None
-    roll3 = mean(prices[-3:]) if len(prices) >= 3 else None
-    roll7 = mean(prices[-7:]) if len(prices) >= 7 else None
-    vol_std3 = statistics.stdev(prices[-3:]) if len(prices) >= 3 else None
-    momentum = (lag1 - lag2) if (lag1 is not None and lag2 is not None) else None
-    row = {
-        "lag1": lag1, "lag2": lag2, "lag3": lag3,
-        "roll3": roll3, "roll7": roll7, "vol_std3": vol_std3,
-        "momentum": momentum,
-        "prev_n": ns[-1] if ns else None,
-        "prev_vol": vols[-1] if vols else None,
-        "dow": dow, "t_index": t_index,
-    }
-    for k, v in row.items():
-        if v is None and k in medians.index:
-            row[k] = float(medians[k])
-    return row
-
-
-def next_trading_days(last_date, count):
+def next_trading_days(last_date: date, count: int):
     """일요일(휴장)을 건너뛴 다음 count개 거래일."""
     days, d = [], last_date
     while len(days) < count:
@@ -170,46 +97,74 @@ def next_trading_days(last_date, count):
     return days
 
 
-def forecast_all(conn):
+def make_feature_row(market, variety, prices, prev_n, prev_vol, fdate: date, min_date, medians):
+    """common_hist.build_daily_ext 와 동일한 정의로 미래 거래일 1행의 피처를 만든다."""
+    row = {
+        "whsl_mrkt_nm": market,
+        "gds_sclsf_nm": variety,
+        "lag1": prices[-1],
+        "lag2": prices[-2] if len(prices) >= 2 else None,
+        "lag3": prices[-3] if len(prices) >= 3 else None,
+        # roll: shift(1).rolling(n, min_periods=1).mean() 과 동일
+        "roll3": sum(prices[-3:]) / len(prices[-3:]),
+        "roll7": sum(prices[-7:]) / len(prices[-7:]),
+        # vol_std3: shift(1).rolling(3, min_periods=2).std() (ddof=1) 과 동일
+        "vol_std3": statistics.stdev(prices[-3:]) if len(prices) >= 2 else None,
+        "momentum": (prices[-1] - prices[-2]) if len(prices) >= 2 else None,
+        "prev_n": prev_n,
+        "prev_vol": prev_vol,
+        "dow": fdate.weekday(),
+        "t_index": (pd.Timestamp(fdate) - min_date).days,
+        "month": fdate.month,
+    }
+    doy = fdate.timetuple().tm_yday
+    row["doy_sin"] = math.sin(2 * math.pi * doy / 365.25)
+    row["doy_cos"] = math.cos(2 * math.pi * doy / 365.25)
+    for c in ch.NUMERIC:
+        if row.get(c) is None and c in medians.index:
+            row[c] = float(medians[c])
+    return row
+
+
+def forecast_all():
     bundle = joblib.load(MODEL_PATH)
     model, medians, features = bundle["model"], bundle["medians"], bundle["features"]
-    enc = model.regressor_.named_steps["pre"].named_transformers_["cat"]
-    known_markets = set(enc.categories_[0])
-    known_varieties = set(enc.categories_[1])
+    try:
+        enc = model.regressor_.named_steps["pre"].named_transformers_["cat"]
+        known_markets, known_varieties = set(enc.categories_[0]), set(enc.categories_[1])
+    except Exception:
+        known_markets = known_varieties = None
 
-    df = pd.read_sql_query(
-        "SELECT * FROM daily_price ORDER BY trade_date", conn)
+    ext = ch.build_daily_ext(include_history=True)
+    min_date = ext["date"].min()  # t_index 기준(히스토리 포함 시작일) — 학습과 동일
+    cur = ext[ext["era"] == "cur"]
+    print(f"[forecast] 피처 프레임 {ext.shape}, 현행 구간 {cur.shape}, t_index 기준일 {min_date.date()}")
+
     combos_out = []
-    for (market, variety), g in df.groupby(["market", "variety"]):
-        if market not in known_markets or variety not in known_varieties:
+    for (market, variety), g in cur.groupby(ch.GROUP_KEYS):
+        if known_markets is not None and (market not in known_markets or variety not in known_varieties):
             continue
         if len(g) < MIN_HISTORY:
             continue
-        g = g.sort_values("trade_date")
-        dates = [datetime.strptime(d, "%Y-%m-%d").date() for d in g["trade_date"]]
-        prices = list(g["vwap"])
-        vols = list(g["volume_kg"])
-        ns = list(g["n_trades"])
-        as_of = dates[-1]
+        g = g.sort_values("date")
+        prices = [float(v) for v in g["vwap"]]
+        prev_n = float(g["n"].iloc[-1])
+        prev_vol = float(g["weight"].iloc[-1])
+        as_of = g["date"].iloc[-1].date()
 
-        band_std = statistics.stdev(prices[-3:]) if len(prices) >= 3 else float(medians["vol_std3"])
-        band_std = max(band_std, prices[-1] * 0.03)
+        band = statistics.stdev(prices[-3:]) if len(prices) >= 3 else float(medians["vol_std3"])
+        band = max(band, prices[-1] * 0.03)
 
-        sim_prices = list(prices)
+        sim = list(prices)
         forecast = []
         for h, fdate in enumerate(next_trading_days(as_of, FORECAST_HORIZON), start=1):
-            row = build_features_row(
-                sim_prices, vols, ns, fdate.weekday(),
-                len(sim_prices), medians)
-            row["whsl_mrkt_nm"] = market
-            row["gds_sclsf_nm"] = variety
+            row = make_feature_row(market, variety, sim, prev_n, prev_vol, fdate, min_date, medians)
             x = pd.DataFrame([row])[features]
-            pred = float(model.predict(x)[0])
-            pred = max(pred, 0.0)
-            sim_prices.append(pred)
-            spread = band_std * (h ** 0.5) * 1.28
+            pred = max(float(model.predict(x)[0]), 0.0)
+            sim.append(pred)
+            spread = band * (h ** 0.5) * 1.28
             forecast.append({
-                "date": fdate.strftime("%Y-%m-%d"),
+                "date": fdate.isoformat(),
                 "price": int(round(pred)),
                 "low": max(0, int(round(pred - spread))),
                 "high": int(round(pred + spread)),
@@ -217,13 +172,13 @@ def forecast_all(conn):
             })
 
         history = [
-            {"date": d.strftime("%Y-%m-%d"), "price": int(round(p))}
-            for d, p in list(zip(dates, prices))[-HISTORY_DAYS:]
+            {"date": d.date().isoformat(), "price": int(round(p))}
+            for d, p in list(zip(g["date"], prices))[-HISTORY_DAYS:]
         ]
         combos_out.append({
             "market": market,
             "variety": variety,
-            "asOf": as_of.strftime("%Y-%m-%d"),
+            "asOf": as_of.isoformat(),
             "history": history,
             "forecast": forecast,
         })
@@ -243,12 +198,11 @@ def forecast_all(conn):
 
 
 def main():
-    if not MARKET_API_KEY:
+    if not os.getenv("MARKET_API_KEY"):
         print("MARKET_API_KEY 환경변수가 필요합니다.", file=sys.stderr)
         sys.exit(1)
-    conn = ensure_db()
-    collect(conn)
-    forecast_all(conn)
+    update_auction_csv()
+    forecast_all()
 
 
 if __name__ == "__main__":

@@ -6,3 +6,5 @@ target/
 .DS_Store
 application-secret.yml
 .env
+ai-server/ml/data/apple_auction_raw.csv
+ai-server/ml/data/apple_history_raw.csv
