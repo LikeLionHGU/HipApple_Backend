@@ -1,10 +1,13 @@
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
+import requests
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
-from datetime import datetime
 from prophet import Prophet
 import openai  # OpenAI API 호출용
 
@@ -21,9 +24,104 @@ app.add_middleware(
 # 키가 없으면 LLM 호출이 실패하고 아래 fallback 문장이 사용됨
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
 
+# 공공데이터포털 - 공영도매시장 실시간 경락 데이터
+MARKET_API_URL = "https://apis.data.go.kr/B552845/katRealTime2/trades2"
+MARKET_API_KEY = os.getenv("MARKET_API_KEY", "")
+APPLE_LCLSF_CD = "06"  # 과실류
+APPLE_MCLSF_CD = "01"  # 사과
+SERIES_DAYS = 35       # Prophet 학습에 사용할 과거 일수
 
-def process_market_analysis(date: str, market_code: str, item_code: str, variety_code: str):
-    # (안전장치용 데모 데이터 생성 파트 - 실제 API 구축 시 params에 위 인자들을 매칭)
+# 일자별 조회 결과 캐시: (date, market_code) -> {"price": float|None, "market_nm": str, "variety": str}
+_daily_cache = {}
+# 대시보드 결과 캐시: (date, market_code) -> (timestamp, payload)
+_dashboard_cache = {}
+DASHBOARD_CACHE_TTL = 600  # 10분
+
+
+def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "후지"):
+    """해당 일자의 사과 경락 데이터를 조회해 kg당 가중평균가를 계산한다. 데이터가 없으면 price=None."""
+    cache_key = (day, market_code)
+    if cache_key in _daily_cache:
+        return _daily_cache[cache_key]
+
+    params = {
+        "serviceKey": MARKET_API_KEY,
+        "cond[trd_clcln_ymd::EQ]": day,
+        "cond[gds_lclsf_cd::EQ]": APPLE_LCLSF_CD,
+        "cond[gds_mclsf_cd::EQ]": APPLE_MCLSF_CD,
+        "numOfRows": 1000,
+        "returnType": "json",
+    }
+    if market_code:
+        params["cond[whsl_mrkt_cd::EQ]"] = market_code
+
+    rows = []
+    for page in range(1, 4):  # 최대 3페이지(3,000건)까지만 사용
+        params["pageNo"] = page
+        resp = requests.get(MARKET_API_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        body = resp.json()["response"]["body"]
+        items = body.get("items") or {}
+        page_rows = items.get("item") or []
+        if isinstance(page_rows, dict):
+            page_rows = [page_rows]
+        rows.extend(page_rows)
+        if page * 1000 >= int(body.get("totalCount", 0)):
+            break
+
+    # 품종 우선순위: 후지 거래가 있으면 후지만, 없으면 전체 사과
+    variety_rows = [r for r in rows
+                    if variety_keyword in (r.get("gds_sclsf_nm") or "")
+                    or variety_keyword in (r.get("corp_gds_vrty_nm") or "")]
+    used_rows = variety_rows if len(variety_rows) >= 5 else rows
+    variety_nm = variety_keyword if used_rows is variety_rows else None
+
+    total_won = 0.0
+    total_kg = 0.0
+    variety_count = {}
+    market_nm = ""
+    for r in used_rows:
+        try:
+            prc = float(r["scsbd_prc"])          # 포장 단위당 낙찰가(원)
+            unit_kg = float(r["unit_qty"])       # 포장 단위중량(kg)
+            qty = float(r["qty"])                # 수량
+        except (KeyError, TypeError, ValueError):
+            continue
+        if prc <= 0 or unit_kg <= 0 or qty <= 0 or (r.get("unit_nm") or "kg") != "kg":
+            continue
+        total_won += prc * qty
+        total_kg += unit_kg * qty
+        market_nm = r.get("whsl_mrkt_nm") or market_nm
+        nm = r.get("gds_sclsf_nm") or "사과"
+        variety_count[nm] = variety_count.get(nm, 0) + 1
+
+    price = round(total_won / total_kg) if total_kg > 0 else None
+    if variety_nm is None:
+        variety_nm = max(variety_count, key=variety_count.get) if variety_count else "사과"
+
+    result = {"price": price, "market_nm": market_nm, "variety": variety_nm}
+    _daily_cache[cache_key] = result
+    return result
+
+
+def build_price_series(end_date: str, market_code: str):
+    """end_date까지 SERIES_DAYS일간의 kg당 사과 평균가 시계열을 만든다."""
+    end = datetime.strptime(end_date, "%Y-%m-%d")
+    days = [(end - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(SERIES_DAYS - 1, -1, -1)]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda d: fetch_daily_apple_price(d, market_code), days))
+
+    records = [(d, r["price"]) for d, r in zip(days, results) if r["price"]]
+    market_nm = next((r["market_nm"] for r in reversed(results) if r["market_nm"]), "가락시장")
+    variety_nm = next((r["variety"] for r in reversed(results) if r["price"]), "사과")
+    df = pd.DataFrame(records, columns=["ds", "y"])
+    df["ds"] = pd.to_datetime(df["ds"])
+    return df, market_nm, variety_nm
+
+
+def build_demo_series(date: str):
+    """공공 API 장애 시 사용하는 데모 데이터 (기존 안전장치 유지)."""
     dates = pd.date_range(start='2026-05-01', end=date, freq='D')
     prices = []
     for i, d in enumerate(dates):
@@ -33,18 +131,32 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
             trend += (i - 60) * 300
         random_noise = np.random.normal(0, 500)
         prices.append(base + trend + random_noise)
-
     df = pd.DataFrame({'ds': dates, 'y': prices})
     df.iloc[-1, df.columns.get_loc('y')] = 43800
+    return df
+
+
+def process_market_analysis(date: str, market_code: str, item_code: str, variety_code: str):
+    market_nm, variety_nm = "가락시장", "사과"
+    df = pd.DataFrame()
+    if MARKET_API_KEY:
+        try:
+            df, market_nm, variety_nm = build_price_series(date, market_code)
+        except Exception:
+            df = pd.DataFrame()
+    is_real_data = len(df) >= 10
+    if not is_real_data:
+        df = build_demo_series(date)
 
     past_7_days = df.tail(7)
     price_today = int(past_7_days.iloc[-1]['y'])
     price_7_days_ago = int(past_7_days.iloc[0]['y'])
     price_diff = price_today - price_7_days_ago
+    price_prev = int(df.iloc[-2]['y']) if len(df) >= 2 else price_today
 
-    past_trend_summary = f"지난 7일간 사과 도매가는 약 {abs(price_diff):,}원 {'상승' if price_diff > 0 else '하락'}하여 현재 {price_today:,}원을 기록했습니다."
+    past_trend_summary = f"지난 7일간 사과 도매가는 kg당 약 {abs(price_diff):,}원 {'상승' if price_diff > 0 else '하락'}하여 현재 {price_today:,}원을 기록했습니다."
 
-    model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
+    model = Prophet(yearly_seasonality=False, weekly_seasonality=True, daily_seasonality=False)
     model.fit(df)
     future_dates = model.make_future_dataframe(periods=7, freq='D')
     forecast = model.predict(future_dates)
@@ -56,17 +168,18 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
     if price_today >= best_price:
         market_pressure = "현재 가격은 단기 고점일 가능성이 매우 높으며, 향후 출하량 재개 시 가격 하락 압력이 예상됩니다. 따라서 오늘 출하가 최선의 선택입니다."
     else:
-        market_pressure = f"향후 추가적인 상승 모멘텀이 존재하며, 최고가 도달이 예상되어 출하 시기를 조정할 필요가 있습니다."
+        market_pressure = f"향후 추가적인 상승 모멘텀이 존재하며, {best_row['ds'].strftime('%m월 %d일')}경 kg당 약 {best_price:,}원의 최고가 도달이 예상되어 출하 시기를 조정할 필요가 있습니다."
 
-    # 3. LLM 프롬프트 조립
+    # LLM 프롬프트 조립
     llm_prompt = f"""
     당신은 농업 데이터 분석 전문 AI 비서입니다. 아래 [시계열 분석 정량 데이터]를 바탕으로 정제된 'AI 시장 분석 리포트' 문장을 생성해 주세요.
     - 친근한 대화체가 아닌, 신뢰감을 주는 비즈니스 표준어 문장으로만 딱 한 단락(3문장 내외) 작성하세요.
     - 문장 안에는 과거 동향 내용과 시장 압력 진단 내용이 자연스럽게 녹아들어야 합니다.
+    - 제공된 데이터에 없는 사실을 지어내지 마세요.
 
     [시계열 분석 정량 데이터]
-    1. 과거 7일 동향 팩트: {past_trend_summary}
-    2. 외부 환경 컨텍스트: 장마철 출하량 감소 현상 맞물림 / 주말부터 경북 지역 출하 재개 예정
+    1. 분석 대상: {market_nm} 사과({variety_nm}) 경락가격 ({'실제 도매시장 경락 데이터' if is_real_data else '데모 데이터'})
+    2. 과거 7일 동향 팩트: {past_trend_summary}
     3. 미래 가격 압력 진단: {market_pressure}
     """
 
@@ -78,8 +191,8 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
             temperature=0.5
         )
         report_text = response.choices[0].message['content'].strip()
-    except Exception as e:
-        report_text = f"{past_trend_summary} 이는 장마철 출하량 감소와 맞닿아 있으나, 이번 주말부터 경북 지역 출하가 재개되면서 가격 하락 압력이 예상됩니다. {market_pressure}"
+    except Exception:
+        report_text = f"{past_trend_summary} Prophet 시계열 예측 결과, {market_pressure}"
 
     chart_list = []
     for _, row in past_7_days.iterrows():
@@ -88,7 +201,16 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
             "price": int(row['y'])
         })
 
-    return price_today, chart_list, report_text
+    summary = {
+        "today_price": price_today,
+        "prev_price": price_prev,
+        "weekly_avg": int(past_7_days['y'].mean()),
+        "weekly_range": f"{past_7_days.iloc[0]['ds'].strftime('%m/%d').lstrip('0')}~{past_7_days.iloc[-1]['ds'].strftime('%m/%d').lstrip('0')}",
+        "monthly_avg": int(df['y'].mean()),
+        "monthly_range": f"최근 {len(df)}일 평균",
+        "basis_date": past_7_days.iloc[-1]['ds'].strftime("%m월 %d일"),
+    }
+    return summary, chart_list, report_text, market_nm, variety_nm
 
 
 @app.get("/api/price/dashboard")
@@ -98,31 +220,40 @@ def get_price_dashboard(
     item_code: str = Query(..., description="품목 코드"),
     variety_code: str = Query(..., description="품종 코드")
 ):
-    # 로직 실행
-    price_today, chart_data, ai_report = process_market_analysis(date, market_code, item_code, variety_code)
+    cache_key = (date, market_code)
+    cached = _dashboard_cache.get(cache_key)
+    if cached and time.time() - cached[0] < DASHBOARD_CACHE_TTL:
+        return cached[1]
 
-    return {
+    summary, chart_data, ai_report, market_nm, variety_nm = process_market_analysis(
+        date, market_code, item_code, variety_code)
+
+    change_rate = 0.0
+    if summary["prev_price"]:
+        change_rate = round((summary["today_price"] - summary["prev_price"]) / summary["prev_price"] * 100, 1)
+
+    payload = {
       "status": "success",
       "search_info": {
-        "formatted_title": f"{date[:4]}년 {int(date[5:7])}월 {int(date[8:10])}일 · 가락시장 · 사과 · 후지",
+        "formatted_title": f"{date[:4]}년 {int(date[5:7])}월 {int(date[8:10])}일 · {market_nm} · 사과 · {variety_nm}",
         "date": f"{date[:4]}년 {int(date[5:7])}월 {int(date[8:10])}일",
-        "market": "가락시장",
+        "market": market_nm,
         "item": "사과",
-        "variety": "후지"
-    },
+        "variety": variety_nm
+      },
       "current_price_info": {
-        "price_per_kg": 2310,
+        "price_per_kg": summary["today_price"],
         "currency": "KRW",
-        "change_rate": 3.5,
-        "change_direction": "UP"
+        "change_rate": abs(change_rate),
+        "change_direction": "UP" if change_rate >= 0 else "DOWN"
       },
       "price_summary": {
-        "today_price": 2310,
-        "today_basis_date": f"{date[5:7]}월 {date[8:10]}일 기준",
-        "weekly_average_price": 2311,
-        "weekly_basis_range": "6/4~6/10",
-        "monthly_average_price": 2405,
-        "monthly_basis_range": "6월 전체 평균"
+        "today_price": summary["today_price"],
+        "today_basis_date": f"{summary['basis_date']} 기준",
+        "weekly_average_price": summary["weekly_avg"],
+        "weekly_basis_range": summary["weekly_range"],
+        "monthly_average_price": summary["monthly_avg"],
+        "monthly_basis_range": summary["monthly_range"]
       },
       "chart_data": chart_data,
       "ai_market_analysis": {
@@ -130,3 +261,5 @@ def get_price_dashboard(
         "report_text": ai_report
       }
     }
+    _dashboard_cache[cache_key] = (time.time(), payload)
+    return payload
