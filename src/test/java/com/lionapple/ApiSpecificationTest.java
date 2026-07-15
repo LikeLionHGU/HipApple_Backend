@@ -131,6 +131,52 @@ class ApiSpecificationTest {
     }
 
     @Test
+    void priceForecastApisMatchSpecification() throws Exception {
+        String token = login();
+
+        mockMvc.perform(get("/price/options")
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.markets[0]").value("서울가락"))
+                .andExpect(jsonPath("$.varieties[0]").value("후지"));
+
+        mockMvc.perform(get("/price/forecast")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .param("market", "서울가락")
+                        .param("variety", "후지"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.market").value("서울가락"))
+                .andExpect(jsonPath("$.variety").value("후지"))
+                .andExpect(jsonPath("$.unit").value("원/kg"))
+                .andExpect(jsonPath("$.asOf").value("2026-07-15"))
+                .andExpect(jsonPath("$.generatedAt").exists())
+                .andExpect(jsonPath("$.history", hasSize(2)))
+                .andExpect(jsonPath("$.forecast[0].horizon").value(1))
+                .andExpect(jsonPath("$.forecast[0].low").exists())
+                .andExpect(jsonPath("$.forecast[0].high").exists());
+
+        mockMvc.perform(get("/price/forecast")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .param("market", "서울가락"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").exists());
+
+        mockMvc.perform(get("/price/forecast")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .param("market", "없는시장")
+                        .param("variety", "없는품종"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("해당 도매시장·품종의 예측 데이터가 없습니다."));
+
+        mockMvc.perform(get("/price/me")
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchedBy").exists())
+                .andExpect(jsonPath("$.unit").value("원/kg"))
+                .andExpect(jsonPath("$.forecast[0].price").exists());
+    }
+
+    @Test
     void protectedApisRejectMissingOrInvalidToken() throws Exception {
         mockMvc.perform(get("/user/me"))
                 .andExpect(status().isUnauthorized());

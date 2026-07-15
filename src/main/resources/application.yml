@@ -34,3 +34,5 @@ app:
     expiration-seconds: 86400
   ai-server:
     url: ${AI_SERVER_URL:http://localhost:8000}
+  forecast:
+    file: ${FORECAST_FILE:./ai-server/out/forecasts.json}

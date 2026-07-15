@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-07-15T06:00:00+09:00",
+  "markets": ["서울가락", "안동"],
+  "varieties": ["후지", "미시마"],
+  "combos": [
+    {
+      "market": "서울가락",
+      "variety": "후지",
+      "asOf": "2026-07-15",
+      "history": [
+        {"date": "2026-07-14", "price": 3958},
+        {"date": "2026-07-15", "price": 3353}
+      ],
+      "forecast": [
+        {"date": "2026-07-16", "price": 3231, "low": 2279, "high": 4184, "horizon": 1},
+        {"date": "2026-07-17", "price": 3449, "low": 2101, "high": 4797, "horizon": 2}
+      ]
+    },
+    {
+      "market": "안동",
+      "variety": "후지",
+      "asOf": "2026-07-15",
+      "history": [
+        {"date": "2026-07-15", "price": 3100}
+      ],
+      "forecast": [
+        {"date": "2026-07-16", "price": 3150, "low": 2800, "high": 3500, "horizon": 1}
+      ]
+    }
+  ]
+}

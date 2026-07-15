@@ -107,11 +107,15 @@ curl http://localhost:8080/v3/api-docs  # JSON 나오면 성공
 
 외부에서: `http://<EC2 퍼블릭IP>:8080/swagger-ui.html`
 
-## 7. Python AI 서버 (시장가격 API용)
+## 7. Python AI 서버 + 예측 배치 (시장가격/예측 API용)
 
-`/api/price/dashboard`는 Python 서버(기본 localhost:8000)로 프록시함.
-같은 EC2에 Python 서버를 올리고 8000 포트로 실행 (이것도 systemd 서비스로 등록 권장).
-다른 곳에 있으면 `/etc/hipapple.env`의 `AI_SERVER_URL` 수정 후 `sudo systemctl restart hipapple`.
+- `ai-server/` 폴더를 EC2에 두고 venv 구성: `python3.11 -m venv venv && ./venv/bin/pip install -r requirements.txt`
+- `/api/price/dashboard`(구 대시보드)는 uvicorn 서버(8000 포트, systemd `hipapple-ai`)가 처리
+- `/price/options`, `/price/forecast`, `/price/me`(신규 예측 API)는 **매일 06:10 KST 배치**
+  (`batch_forecast.py`, systemd `hipapple-batch.timer`)가 만든 `out/forecasts.json`을 Java가 읽어서 응답
+- 필요한 환경변수(`/etc/hipapple.env`): `MARKET_API_KEY`(공공데이터포털 인증키),
+  `FORECAST_FILE=/home/ec2-user/ai-server/out/forecasts.json`
+- 배치 수동 실행: `sudo systemctl start hipapple-batch` / 로그: `journalctl -u hipapple-batch`
 
 ## 8. 프런트/구글 연동 체크리스트
 

@@ -50,6 +50,10 @@ public class UserProfile {
         return userId;
     }
 
+    public String getFarmLocation() {
+        return farmLocation;
+    }
+
     public String getVariety() {
         return variety;
     }

@@ -20,3 +20,5 @@ app:
     expiration-seconds: 86400
   ai-server:
     url: http://localhost:8000
+  forecast:
+    file: src/test/resources/forecasts-test.json
