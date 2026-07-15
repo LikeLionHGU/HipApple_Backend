@@ -6,6 +6,7 @@ import com.lionapple.storage.Storage;
 
 public record StorageSummaryResponse(
         Long storageId,
+        String name,
         int startDate,
         String type,
         String storageMethod,
@@ -17,6 +18,7 @@ public record StorageSummaryResponse(
         int startDate = date.getYear() * 10000 + date.getMonthValue() * 100 + date.getDayOfMonth();
         return new StorageSummaryResponse(
                 storage.getStorageId(),
+                storage.getName(),
                 startDate,
                 storage.getAppleType(),
                 storage.getStorageMethod(),

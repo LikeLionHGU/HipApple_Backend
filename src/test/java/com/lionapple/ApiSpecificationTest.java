@@ -107,6 +107,7 @@ class ApiSpecificationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].storageId").exists())
+                .andExpect(jsonPath("$[0].name").value("저장고A"))
                 .andExpect(jsonPath("$[0].startDate").exists());
 
         mockMvc.perform(get("/storage/1")
