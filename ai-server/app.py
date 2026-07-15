@@ -38,8 +38,22 @@ _dashboard_cache = {}
 DASHBOARD_CACHE_TTL = 600  # 10분
 
 
+def _get_market_api(params):
+    """공공데이터 게이트웨이가 간헐적으로 502를 반환하므로 1회 재시도한다."""
+    for attempt in range(2):
+        try:
+            resp = requests.get(MARKET_API_URL, params=params, timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            if attempt == 1:
+                raise
+            time.sleep(0.5)
+
+
 def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "후지"):
-    """해당 일자의 사과 경락 데이터를 조회해 kg당 가중평균가를 계산한다. 데이터가 없으면 price=None."""
+    """해당 일자의 사과 경락 데이터를 조회해 kg당 가중평균가를 계산한다.
+    데이터가 없으면 price=None. 조회 실패한 날은 캐시하지 않고 그 날만 건너뛴다."""
     cache_key = (day, market_code)
     if cache_key in _daily_cache:
         return _daily_cache[cache_key]
@@ -56,18 +70,20 @@ def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "
         params["cond[whsl_mrkt_cd::EQ]"] = market_code
 
     rows = []
-    for page in range(1, 4):  # 최대 3페이지(3,000건)까지만 사용
-        params["pageNo"] = page
-        resp = requests.get(MARKET_API_URL, params=params, timeout=15)
-        resp.raise_for_status()
-        body = resp.json()["response"]["body"]
-        items = body.get("items") or {}
-        page_rows = items.get("item") or []
-        if isinstance(page_rows, dict):
-            page_rows = [page_rows]
-        rows.extend(page_rows)
-        if page * 1000 >= int(body.get("totalCount", 0)):
-            break
+    try:
+        for page in range(1, 4):  # 최대 3페이지(3,000건)까지만 사용
+            params["pageNo"] = page
+            body = _get_market_api(params)["response"]["body"]
+            items = body.get("items") or {}
+            page_rows = items.get("item") or []
+            if isinstance(page_rows, dict):
+                page_rows = [page_rows]
+            rows.extend(page_rows)
+            if page * 1000 >= int(body.get("totalCount", 0)):
+                break
+    except Exception:
+        # 이 날짜 조회 실패: 캐시 없이 None 반환 → 시계열에서 하루만 빠진다
+        return {"price": None, "market_nm": "", "variety": "사과"}
 
     # 품종 우선순위: 후지 거래가 있으면 후지만, 없으면 전체 사과
     variety_rows = [r for r in rows
@@ -136,16 +152,25 @@ def build_demo_series(date: str):
     return df
 
 
+def load_series(end_date: str, market_code: str):
+    """시장 코드 기준으로 시계열을 만들고, 데이터가 부족하면 전국 기준으로 재시도."""
+    df, market_nm, variety_nm = build_price_series(end_date, market_code)
+    if len(df) < 10 and market_code:
+        df, _, variety_nm = build_price_series(end_date, "")
+        market_nm = "전국 도매시장"
+    return df, market_nm, variety_nm
+
+
 def process_market_analysis(date: str, market_code: str, item_code: str, variety_code: str):
     market_nm, variety_nm = "가락시장", "사과"
     df = pd.DataFrame()
     if MARKET_API_KEY:
         try:
-            df, market_nm, variety_nm = build_price_series(date, market_code)
-            if len(df) < 10 and market_code:
-                # 유효하지 않은 시장 코드 등으로 데이터가 부족하면 전국 기준으로 재시도
-                df, _, variety_nm = build_price_series(date, "")
-                market_nm = "전국 도매시장"
+            df, market_nm, variety_nm = load_series(date, market_code)
+            # 실시간 API는 최근 약 한 달치만 보관하므로, 오래된 날짜 요청이면 최신 데이터로 대체
+            today = datetime.now().strftime("%Y-%m-%d")
+            if len(df) < 10 and date != today:
+                df, market_nm, variety_nm = load_series(today, market_code)
         except Exception:
             df = pd.DataFrame()
     is_real_data = len(df) >= 10
