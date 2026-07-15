@@ -138,6 +138,13 @@ class ApiSpecificationTest {
         mockMvc.perform(get("/storage")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer invalid.token.value"))
                 .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/price/dashboard")
+                        .param("date", "2026-07-15")
+                        .param("market_code", "110001")
+                        .param("item_code", "0601")
+                        .param("variety_code", "06011"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -152,6 +159,7 @@ class ApiSpecificationTest {
                 .andExpect(jsonPath("$.paths['/storage'].get").exists())
                 .andExpect(jsonPath("$.paths['/storage/{storageId}'].get").exists())
                 .andExpect(jsonPath("$.paths['/storage/{storageId}'].put").exists())
-                .andExpect(jsonPath("$.paths['/storage/{storageId}'].delete").exists());
+                .andExpect(jsonPath("$.paths['/storage/{storageId}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/api/price/dashboard'].get").exists());
     }
 }

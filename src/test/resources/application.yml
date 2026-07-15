@@ -18,3 +18,5 @@ app:
   jwt:
     secret: test-jwt-secret-key-for-hipapple-backend-tests
     expiration-seconds: 86400
+  ai-server:
+    url: http://localhost:8000
