@@ -137,7 +137,15 @@ def forecast_all():
 
     ext = ch.build_daily_ext(include_history=True)
     min_date = ext["date"].min()  # t_index 기준(히스토리 포함 시작일) — 학습과 동일
-    cur = ext[ext["era"] == "cur"]
+    cur = ext[ext["era"] == "cur"].copy()
+
+    # 품종 미기재 물량(소분류명 "사과")은 "기타"에 합산 — 드롭다운에 "사과" 품종이 뜨지 않도록.
+    # 같은 (시장, 기타, 날짜)로 합쳐질 수 있으므로 물량 가중으로 재집계한다.
+    cur["gds_sclsf_nm"] = cur["gds_sclsf_nm"].replace({"사과": "기타"})
+    cur = (cur.groupby(ch.GROUP_KEYS + ["date"])
+              .agg(amount=("amount", "sum"), weight=("weight", "sum"), n=("n", "sum"))
+              .reset_index())
+    cur["vwap"] = cur["amount"] / cur["weight"]
     print(f"[forecast] 피처 프레임 {ext.shape}, 현행 구간 {cur.shape}, t_index 기준일 {min_date.date()}")
 
     combos_out = []
