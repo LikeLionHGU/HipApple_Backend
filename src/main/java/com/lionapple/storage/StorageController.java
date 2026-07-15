@@ -45,9 +45,9 @@ public class StorageController {
     }
 
     @GetMapping("/me")
-    @Operation(summary = "저장고 이름 조회")
-    public StorageNameResponse myStorageName(@CurrentUserId Long userId) {
-        return storageService.findMyStorageName(userId);
+    @Operation(summary = "저장고 이름 목록 조회 (드롭다운용)")
+    public List<StorageNameResponse> myStorageNames(@CurrentUserId Long userId) {
+        return storageService.findMyStorageNames(userId);
     }
 
     @GetMapping("/{storageId}")

@@ -29,10 +29,10 @@ public class StorageService {
         storageRepository.save(new Storage(userId, request));
     }
 
-    public StorageNameResponse findMyStorageName(Long userId) {
-        return storageRepository.findFirstByUserIdOrderByStorageIdAsc(userId)
-                .map(storage -> new StorageNameResponse(storage.getName()))
-                .orElseThrow(() -> new NoSuchElementException("저장고를 찾을 수 없습니다."));
+    public List<StorageNameResponse> findMyStorageNames(Long userId) {
+        return storageRepository.findAllByUserId(userId).stream()
+                .map(StorageNameResponse::from)
+                .toList();
     }
 
     public List<StorageSummaryResponse> findAll(Long userId) {

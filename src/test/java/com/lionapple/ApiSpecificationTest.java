@@ -105,7 +105,9 @@ class ApiSpecificationTest {
         mockMvc.perform(get("/storage/me")
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("저장고A"));
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].storageId").exists())
+                .andExpect(jsonPath("$[0].name").value("저장고A"));
 
         mockMvc.perform(get("/storage")
                         .header(HttpHeaders.AUTHORIZATION, token))
