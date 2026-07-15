@@ -142,6 +142,10 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
     if MARKET_API_KEY:
         try:
             df, market_nm, variety_nm = build_price_series(date, market_code)
+            if len(df) < 10 and market_code:
+                # 유효하지 않은 시장 코드 등으로 데이터가 부족하면 전국 기준으로 재시도
+                df, _, variety_nm = build_price_series(date, "")
+                market_nm = "전국 도매시장"
         except Exception:
             df = pd.DataFrame()
     is_real_data = len(df) >= 10
