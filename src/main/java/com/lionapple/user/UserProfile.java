@@ -16,6 +16,9 @@ public class UserProfile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false, unique = true)
+    private Long userId;
+
     @Column(nullable = false)
     private String farmLocation;
 
@@ -34,12 +37,17 @@ public class UserProfile {
     protected UserProfile() {
     }
 
-    public UserProfile(ProfileRequest request) {
+    public UserProfile(Long userId, ProfileRequest request) {
+        this.userId = userId;
         update(request);
     }
 
     public Long getId() {
         return id;
+    }
+
+    public Long getUserId() {
+        return userId;
     }
 
     public String getVariety() {

@@ -1,5 +1,7 @@
 package com.lionapple.user;
 
+import java.util.NoSuchElementException;
+
 import com.lionapple.user.dto.GoogleLoginRequest;
 import com.lionapple.user.dto.LoginResponse;
 import com.lionapple.user.dto.ProfileRequest;
@@ -39,16 +41,18 @@ public class UserService {
     }
 
     @Transactional
-    public void saveProfile(ProfileRequest request) {
-        UserProfile profile = userProfileRepository.findById(1L)
-                .orElseGet(() -> new UserProfile(request));
+    public void saveProfile(Long userId, ProfileRequest request) {
+        UserProfile profile = userProfileRepository.findByUserId(userId)
+                .orElseGet(() -> new UserProfile(userId, request));
         profile.update(request);
         userProfileRepository.save(profile);
     }
 
-    public UserMeResponse me() {
-        return userProfileRepository.findById(1L)
-                .map(profile -> new UserMeResponse(profile.getId(), profile.getVariety() + " 농가"))
-                .orElseGet(() -> new UserMeResponse(1L, "박주아"));
+    public UserMeResponse me(Long userId) {
+        return userProfileRepository.findByUserId(userId)
+                .map(profile -> new UserMeResponse(userId, profile.getVariety() + " 농가"))
+                .orElseGet(() -> userAccountRepository.findById(userId)
+                        .map(account -> new UserMeResponse(userId, account.getName()))
+                        .orElseThrow(() -> new NoSuchElementException("사용자를 찾을 수 없습니다.")));
     }
 }

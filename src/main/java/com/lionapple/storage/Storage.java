@@ -19,6 +19,9 @@ public class Storage {
     private Long storageId;
 
     @Column(nullable = false)
+    private Long userId;
+
+    @Column(nullable = false)
     private String name;
 
     @Column(nullable = false)
@@ -48,12 +51,17 @@ public class Storage {
     protected Storage() {
     }
 
-    public Storage(StorageRequest request) {
+    public Storage(Long userId, StorageRequest request) {
+        this.userId = userId;
         update(request);
     }
 
     public Long getStorageId() {
         return storageId;
+    }
+
+    public Long getUserId() {
+        return userId;
     }
 
     public String getName() {

@@ -1,10 +1,12 @@
 spring:
   application:
     name: lion-apple
+  config:
+    import: optional:file:./application-secret.yml
   datasource:
-    url: jdbc:mysql://localhost:3306/lion_apple?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-    username: root
-    password: Qkrgoehf0206@@
+    url: ${DB_URL:jdbc:mysql://localhost:3306/lion_apple?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
@@ -23,7 +25,7 @@ springdoc:
 
 google:
   oauth:
-    client-id: 964129047813-hdnng4fd73r6cmvt5mid5u6ime9d6l39.apps.googleusercontent.com
+    client-id: ${GOOGLE_CLIENT_ID:964129047813-hdnng4fd73r6cmvt5mid5u6ime9d6l39.apps.googleusercontent.com}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
 
 app:

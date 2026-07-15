@@ -24,18 +24,18 @@ public class StorageService {
     }
 
     @Transactional
-    public void create(StorageRequest request) {
-        storageRepository.save(new Storage(request));
+    public void create(Long userId, StorageRequest request) {
+        storageRepository.save(new Storage(userId, request));
     }
 
-    public List<StorageSummaryResponse> findAll() {
-        return storageRepository.findAll().stream()
+    public List<StorageSummaryResponse> findAll(Long userId) {
+        return storageRepository.findAllByUserId(userId).stream()
                 .map(StorageSummaryResponse::from)
                 .toList();
     }
 
-    public StorageDetailResponse findOne(Long storageId) {
-        Storage storage = getStorage(storageId);
+    public StorageDetailResponse findOne(Long userId, Long storageId) {
+        Storage storage = getStorage(userId, storageId);
         long storagePeriodDays = ChronoUnit.DAYS.between(storage.getStoreDate().toLocalDate(), LocalDate.now());
         if (storagePeriodDays < 0) {
             storagePeriodDays = 0;
@@ -72,20 +72,17 @@ public class StorageService {
     }
 
     @Transactional
-    public void update(Long storageId, StorageRequest request) {
-        getStorage(storageId).update(request);
+    public void update(Long userId, Long storageId, StorageRequest request) {
+        getStorage(userId, storageId).update(request);
     }
 
     @Transactional
-    public void delete(Long storageId) {
-        if (!storageRepository.existsById(storageId)) {
-            throw new NoSuchElementException("저장고를 찾을 수 없습니다.");
-        }
-        storageRepository.deleteById(storageId);
+    public void delete(Long userId, Long storageId) {
+        storageRepository.delete(getStorage(userId, storageId));
     }
 
-    private Storage getStorage(Long storageId) {
-        return storageRepository.findById(storageId)
+    private Storage getStorage(Long userId, Long storageId) {
+        return storageRepository.findByStorageIdAndUserId(storageId, userId)
                 .orElseThrow(() -> new NoSuchElementException("저장고를 찾을 수 없습니다."));
     }
 

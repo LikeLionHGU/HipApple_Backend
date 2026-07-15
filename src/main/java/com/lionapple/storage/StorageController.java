@@ -3,6 +3,7 @@ package com.lionapple.storage;
 import java.util.List;
 
 import com.lionapple.common.ApiResult;
+import com.lionapple.common.auth.CurrentUserId;
 import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
@@ -31,34 +32,38 @@ public class StorageController {
 
     @PostMapping
     @Operation(summary = "저장고 등록")
-    public ApiResult create(@Valid @RequestBody StorageRequest request) {
-        storageService.create(request);
+    public ApiResult create(@CurrentUserId Long userId, @Valid @RequestBody StorageRequest request) {
+        storageService.create(userId, request);
         return ApiResult.success();
     }
 
     @GetMapping
     @Operation(summary = "전체 저장고 조회")
-    public List<StorageSummaryResponse> findAll() {
-        return storageService.findAll();
+    public List<StorageSummaryResponse> findAll(@CurrentUserId Long userId) {
+        return storageService.findAll(userId);
     }
 
     @GetMapping("/{storageId}")
     @Operation(summary = "세부적인 저장고 조회")
-    public StorageDetailResponse findOne(@PathVariable Long storageId) {
-        return storageService.findOne(storageId);
+    public StorageDetailResponse findOne(@CurrentUserId Long userId, @PathVariable Long storageId) {
+        return storageService.findOne(userId, storageId);
     }
 
     @PutMapping("/{storageId}")
     @Operation(summary = "저장고 수정")
-    public ApiResult update(@PathVariable Long storageId, @Valid @RequestBody StorageRequest request) {
-        storageService.update(storageId, request);
+    public ApiResult update(
+            @CurrentUserId Long userId,
+            @PathVariable Long storageId,
+            @Valid @RequestBody StorageRequest request
+    ) {
+        storageService.update(userId, storageId, request);
         return ApiResult.success();
     }
 
     @DeleteMapping("/{storageId}")
     @Operation(summary = "저장고 삭제")
-    public ApiResult delete(@PathVariable Long storageId) {
-        storageService.delete(storageId);
+    public ApiResult delete(@CurrentUserId Long userId, @PathVariable Long storageId) {
+        storageService.delete(userId, storageId);
         return ApiResult.deleted();
     }
 }

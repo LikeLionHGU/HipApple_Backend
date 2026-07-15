@@ -1,6 +1,7 @@
 package com.lionapple.user;
 
 import com.lionapple.common.ApiResult;
+import com.lionapple.common.auth.CurrentUserId;
 import com.lionapple.user.dto.GoogleLoginRequest;
 import com.lionapple.user.dto.LoginResponse;
 import com.lionapple.user.dto.ProfileRequest;
@@ -33,14 +34,14 @@ public class UserController {
 
     @PostMapping("/profile")
     @Operation(summary = "농가 정보 입력")
-    public ApiResult saveProfile(@Valid @RequestBody ProfileRequest request) {
-        userService.saveProfile(request);
+    public ApiResult saveProfile(@CurrentUserId Long userId, @Valid @RequestBody ProfileRequest request) {
+        userService.saveProfile(userId, request);
         return ApiResult.success();
     }
 
     @GetMapping("/me")
     @Operation(summary = "사용자 정보 조회")
-    public UserMeResponse me() {
-        return userService.me();
+    public UserMeResponse me(@CurrentUserId Long userId) {
+        return userService.me(userId);
     }
 }

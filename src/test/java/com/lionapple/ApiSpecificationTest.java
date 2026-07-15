@@ -16,9 +16,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.jayway.jsonpath.JsonPath;
 import com.lionapple.user.GoogleTokenVerifier;
 import com.lionapple.user.dto.GoogleUserInfo;
 
@@ -32,18 +34,27 @@ class ApiSpecificationTest {
     @MockBean
     private GoogleTokenVerifier googleTokenVerifier;
 
-    @Test
-    void userApisMatchSpecification() throws Exception {
+    private String login() throws Exception {
         when(googleTokenVerifier.verify(eq("google-id-token")))
                 .thenReturn(new GoogleUserInfo("google-sub-1", "jua@example.com", "박주아", "https://example.com/profile.png"));
 
-        mockMvc.perform(post("/user/google")
+        String response = mockMvc.perform(post("/user/google")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"idToken\":\"google-id-token\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken", matchesPattern("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$")));
+                .andExpect(jsonPath("$.accessToken", matchesPattern("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return "Bearer " + JsonPath.<String>read(response, "$.accessToken");
+    }
+
+    @Test
+    void userApisMatchSpecification() throws Exception {
+        String token = login();
 
         mockMvc.perform(post("/user/profile")
+                        .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -57,7 +68,8 @@ class ApiSpecificationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("Success"));
 
-        mockMvc.perform(get("/user/me"))
+        mockMvc.perform(get("/user/me")
+                        .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.name").value("부사 농가"));
@@ -65,6 +77,8 @@ class ApiSpecificationTest {
 
     @Test
     void storageApisMatchSpecification() throws Exception {
+        String token = login();
+
         String request = """
                 {
                   "name":"저장고A",
@@ -80,32 +94,50 @@ class ApiSpecificationTest {
                 """;
 
         mockMvc.perform(post("/storage")
+                        .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("Success"));
 
-        mockMvc.perform(get("/storage"))
+        mockMvc.perform(get("/storage")
+                        .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].storageId").exists())
                 .andExpect(jsonPath("$[0].startDate").exists());
 
-        mockMvc.perform(get("/storage/1"))
+        mockMvc.perform(get("/storage/1")
+                        .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.temperature").exists())
                 .andExpect(jsonPath("$.humidity").exists())
                 .andExpect(jsonPath("$.ethylene").exists());
 
         mockMvc.perform(put("/storage/1")
+                        .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("Success"));
 
-        mockMvc.perform(delete("/storage/1"))
+        mockMvc.perform(delete("/storage/1")
+                        .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("삭제 완료"));
+    }
+
+    @Test
+    void protectedApisRejectMissingOrInvalidToken() throws Exception {
+        mockMvc.perform(get("/user/me"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/storage"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/storage")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer invalid.token.value"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
