@@ -6,7 +6,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/lionapple?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
     username: root
-    password: choyeel1010!
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
