@@ -62,6 +62,7 @@ DB 계정 정보는 [application.yml](src/main/resources/application.yml)에서 
 | GET | `/storage/{storageId}` | 세부적인 저장고 조회 | 온도, 습도, 에틸렌, 저장기간, 품질상태, 출하 추천일, 분석근거, 주변 날짜 포함 |
 | PUT | `/storage/{storageId}` | 저장고 수정 | `{ "result": "Success" }` |
 | DELETE | `/storage/{storageId}` | 저장고 삭제 | `{ "result": "삭제 완료" }` |
+| POST | `/storage/{storageId}/quality-check` | 사진 기반 AI 사과 품질 판정 (`multipart/form-data`, `photo` 필드) | 등급/숙성도/색상/출하 코멘트/신뢰도 |
 
 ## 저장고 등록/수정 요청 예시
 
@@ -80,3 +81,7 @@ DB 계정 정보는 [application.yml](src/main/resources/application.yml)에서 
 ```
 
 저장고 데이터는 MySQL에 저장됩니다. `spring.jpa.hibernate.ddl-auto=update`로 설정되어 있어 애플리케이션 실행 시 필요한 테이블이 자동 생성/갱신됩니다.
+
+## 사진 기반 AI 품질 판정
+
+`POST /storage/{storageId}/quality-check`에 사과 사진 한 장(`photo`, jpeg/png/webp, 8MB 이하)을 `multipart/form-data`로 업로드하면, 백엔드가 파이썬 AI 서버(`/api/quality/analyze`)로 사진을 전달해 vision LLM(OpenAI `gpt-4o-mini`)이 사진만으로 등급·숙성도·색상·출하 시점 코멘트를 판정합니다. 사진 파일 자체는 저장하지 않고, 판정 결과만 해당 저장고 레코드에 최신 값으로 반영되어 `GET /storage/{storageId}` 응답에도 함께 노출됩니다. AI 서버 쪽에는 `OPENAI_API_KEY` 환경변수가 필요합니다.

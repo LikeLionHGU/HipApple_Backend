@@ -6,5 +6,7 @@ target/
 .DS_Store
 application-secret.yml
 .env
+__pycache__/
+*.pyc
 ai-server/ml/data/apple_auction_raw.csv
 ai-server/ml/data/apple_history_raw.csv
