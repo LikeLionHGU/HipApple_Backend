@@ -4,10 +4,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+import com.lionapple.storage.dto.MajorScheduleResponse;
 import com.lionapple.storage.dto.QualityAnalysisResult;
 import com.lionapple.storage.dto.QualityCheckResponse;
 import com.lionapple.storage.dto.StorageDetailResponse;
@@ -92,6 +94,74 @@ public class StorageService {
                 storage.getQualityConfidence(),
                 storage.getQualityCheckedAt()
         );
+    }
+    @Transactional
+    public StorageDetailResponse startAnalysis(Long userId, Long storageId) {
+        Storage storage = storageRepository.findById(storageId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 저장고입니다. id=" + storageId));
+
+        // 분석 시작일 설정
+        storage.startAnalysis();
+
+        // 기존에 만드신 상세 조회 메서드명(findOne)으로 호출
+        return findOne(userId, storageId);
+    }
+
+    public List<MajorScheduleResponse> getMajorSchedules(Long userId, Long storageId) {
+        Storage storage = getStorage(userId, storageId);
+
+        List<MajorScheduleResponse> majorSchedules = new ArrayList<>();
+
+        // 1. 저장 시작 (저장고 등록 시 기본 생성)
+        if (storage.getStoreDate() != null) {
+            majorSchedules.add(new MajorScheduleResponse(
+                    "저장 시작",
+                    storage.getStoreDate().toLocalDate(),
+                    "STORE_START"
+            ));
+        }
+
+        // 2. 'AI 추천 받기'를 클릭해 analysisStartDate가 생성된 경우
+        if (storage.getAnalysisStartDate() != null) {
+            LocalDate analysisStart = storage.getAnalysisStartDate();
+
+            // 첫 AI 가격 예측 생성
+            majorSchedules.add(new MajorScheduleResponse(
+                    "첫 AI 가격 예측 생성",
+                    analysisStart,
+                    "FIRST_PREDICT"
+            ));
+
+            // 첫 '출하 고려' 추천 (희망 출하일이 있으면 사용, 없으면 분석 시작 5일 후)
+            LocalDate shipmentDate = (storage.getPreferredDate() != null)
+                    ? LocalDate.parse(storage.getPreferredDate())
+                    : analysisStart.plusDays(5);
+
+            majorSchedules.add(new MajorScheduleResponse(
+                    "첫 '출하 고려' 추천",
+                    shipmentDate,
+                    "SHIPMENT_RECOMMEND"
+            ));
+
+            // 최고 예측 가격 기록 (분석 시작 15일 후)
+            majorSchedules.add(new MajorScheduleResponse(
+                    "최고 예측 가격 기록",
+                    analysisStart.plusDays(15),
+                    "MAX_PRICE_RECORD"
+            ));
+
+            // 리포트 생성 (분석 시작 20일 후)
+            majorSchedules.add(new MajorScheduleResponse(
+                    "리포트 생성",
+                    analysisStart.plusDays(20),
+                    "REPORT_GENERATE"
+            ));
+        }
+
+        // 날짜순 오름차순 정렬 후 반환
+        return majorSchedules.stream()
+                .sorted(Comparator.comparing(MajorScheduleResponse::date))
+                .toList();
     }
 
     @Transactional

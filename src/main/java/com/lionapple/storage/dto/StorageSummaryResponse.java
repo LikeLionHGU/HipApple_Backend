@@ -10,7 +10,9 @@ public record StorageSummaryResponse(
         int startDate,
         String type,
         String storageMethod,
-        int brix
+        int brix,
+        LocalDate analysisStartDate, // 분석 시작일 (UI의 2026.7.1~ 표시용)
+        long storagePeriodDays       // 경과일
 ) {
 
     public static StorageSummaryResponse from(Storage storage) {
@@ -22,7 +24,9 @@ public record StorageSummaryResponse(
                 startDate,
                 storage.getAppleType(),
                 storage.getStorageMethod(),
-                storage.getBrix()
+                storage.getBrix(),
+                storage.getAnalysisStartDate(),
+                storage.getStoragePeriodDays()
         );
     }
 }

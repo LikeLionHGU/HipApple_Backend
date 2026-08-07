@@ -1,6 +1,8 @@
 package com.lionapple.storage;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import com.lionapple.storage.dto.QualityAnalysisResult;
 import com.lionapple.storage.dto.StorageRequest;
@@ -64,6 +66,9 @@ public class Storage {
 
     private LocalDateTime qualityCheckedAt;
 
+    @Column(nullable = true)
+    private LocalDate analysisStartDate; // 분석 시작일
+
     protected Storage() {
     }
 
@@ -116,6 +121,8 @@ public class Storage {
         return preferredDate;
     }
 
+    public LocalDate getAnalysisStartDate(){return analysisStartDate;}
+
     public String getQualityGrade() {
         return qualityGrade;
     }
@@ -159,5 +166,18 @@ public class Storage {
         this.condition = request.condition();
         this.amount = request.amount();
         this.preferredDate = request.preferredDate();
+    }
+    public void startAnalysis() {
+        if (this.analysisStartDate == null) {
+            this.analysisStartDate = LocalDate.now();
+        }
+    }
+
+    // 분석 진행 기간(일수) 계산 (분석 시작 전이면 0일 반환)
+    public long getStoragePeriodDays() {
+        if (this.analysisStartDate == null) {
+            return 0;
+        }
+        return ChronoUnit.DAYS.between(this.analysisStartDate, LocalDate.now()) + 1;
     }
 }

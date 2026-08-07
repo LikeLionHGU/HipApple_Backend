@@ -4,7 +4,6 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-/** 파이썬 배치가 생성한 forecasts.json 파일 구조. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ForecastData(
         String generatedAt,

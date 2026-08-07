@@ -1,5 +1,7 @@
 package com.lionapple.storage.dto;
 
+import com.lionapple.storage.Storage;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,4 +32,41 @@ public record StorageDetailResponse(
         String qualityConfidence,
         LocalDateTime qualityCheckedAt
 ) {
+    public static StorageDetailResponse of(
+            Storage storage,
+            int temperature,
+            int humidity,
+            double ethylene,
+            String qualityStatus,
+            String shipmentRecommendation,
+            String analysisReason,
+            List<Integer> nearbyDates
+    ){
+        int startDate = (storage.getAnalysisStartDate() != null)
+                ? storage.getAnalysisStartDate().getDayOfMonth()
+                : 0;
+
+        return new StorageDetailResponse(
+                storage.getStorageId(),
+                storage.getName(),
+                storage.getAppleType(),
+                startDate,
+                storage.getStoreDate(),
+                storage.getStorageMethod(),
+                storage.getBrix(),
+                storage.getHardness(),
+                storage.getCondition(),
+                storage.getAmount(),
+                storage.getPreferredDate(),
+                storage.getStoragePeriodDays(),
+                temperature,
+                humidity,
+                ethylene,
+                qualityStatus,
+                shipmentRecommendation,
+                analysisReason,
+                nearbyDates
+        );
+    }
+
 }
