@@ -65,7 +65,13 @@ public record StorageDetailResponse(
                 qualityStatus,
                 shipmentRecommendation,
                 analysisReason,
-                nearbyDates
+                nearbyDates,
+                storage.getQualityGrade(),
+                storage.getQualityRipeness(),
+                storage.getQualityColorDescription(),
+                storage.getQualityShipmentComment(),
+                storage.getQualityConfidence(),
+                storage.getQualityCheckedAt()
         );
     }
 
