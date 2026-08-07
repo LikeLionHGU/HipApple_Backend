@@ -4,12 +4,14 @@ import java.util.List;
 
 import com.lionapple.common.ApiResult;
 import com.lionapple.common.auth.CurrentUserId;
+import com.lionapple.storage.dto.QualityCheckResponse;
 import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,7 +19,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/storage")
@@ -71,5 +75,15 @@ public class StorageController {
     public ApiResult delete(@CurrentUserId Long userId, @PathVariable Long storageId) {
         storageService.delete(userId, storageId);
         return ApiResult.deleted();
+    }
+
+    @PostMapping(value = "/{storageId}/quality-check", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "사진 기반 AI 사과 품질 판정")
+    public QualityCheckResponse checkQuality(
+            @CurrentUserId Long userId,
+            @PathVariable Long storageId,
+            @RequestPart("photo") MultipartFile photo
+    ) {
+        return storageService.analyzeQuality(userId, storageId, photo);
     }
 }

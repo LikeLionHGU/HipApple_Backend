@@ -1,10 +1,11 @@
+import base64
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import requests
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
@@ -69,6 +70,14 @@ class DashboardResponse(BaseModel):
     price_summary: PriceSummary
     chart_data: List[ChartDataPoint]
     ai_market_analysis: AiMarketAnalysis
+
+
+class QualityAnalysisResponse(BaseModel):
+    grade: str = Field(..., description="AI 등급 판정 (특/상/중/하/판정불가)")
+    ripeness: str = Field(..., description="숙성 정도에 대한 짧은 문장")
+    colorDescription: str = Field(..., description="색상/착색 상태에 대한 짧은 문장")
+    shipmentComment: str = Field(..., description="출하 시점에 대한 조언 1~2문장")
+    confidence: str = Field(..., description="판정 신뢰도 (high/medium/low)")
 # ------------------------------------------------------------------
 
 # 공공데이터포털 - 공영도매시장 실시간 경락 데이터
@@ -369,3 +378,92 @@ def get_price_dashboard(
     }
     _dashboard_cache[cache_key] = (time.time(), payload)
     return payload
+
+
+# --- 사진 기반 AI 사과 품질 판정 --------------------------------------------
+
+ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_PHOTO_BYTES = 8 * 1024 * 1024  # 8MB
+
+QUALITY_ANALYSIS_FALLBACK = {
+    "grade": "판정불가",
+    "ripeness": "분석 실패",
+    "colorDescription": "-",
+    "shipmentComment": "일시적으로 AI 분석에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    "confidence": "low",
+}
+
+QUALITY_ANALYSIS_PROMPT = """당신은 사과 품질을 사진만으로 육안 판정하는 AI 검수 보조입니다.
+제공된 사과 사진 한 장을 보고, 다른 정보 없이 오직 사진에서 보이는 것만으로 판단하세요.
+반드시 아래 JSON 형식으로만 답하세요. 다른 설명, 인사말, 코드블록 표시는 절대 포함하지 마세요.
+
+{
+  "grade": "특|상|중|하 중 하나",
+  "ripeness": "사진에서 보이는 숙성 정도에 대한 짧은 한 문장",
+  "color_description": "색상/착색 상태에 대한 짧은 한 문장",
+  "shipment_comment": "사진 속 사과 상태를 근거로 한 출하 시점 조언 1~2문장",
+  "confidence": "high|medium|low"
+}
+
+판정 기준:
+- grade는 색상 균일도, 표면 흠집·멍·반점 여부, 전체적인 신선도로 종합 판단하세요.
+- 품종 정보가 주어지지 않았으므로 특정 품종 기준(예: 후지 대비 착색도)을 가정하지 말고,
+  사진에 보이는 사과 자체의 상태만으로 판단하세요.
+- 사진이 흐리거나, 조명이 나쁘거나, 사과가 프레임에 온전히 담기지 않아 판정이 어려우면
+  confidence를 "low"로 낮추고 grade는 보수적으로("중" 이하로) 답하세요.
+- 사과가 아닌 사진이거나 사과를 식별할 수 없으면 grade를 "판정불가"로 하고,
+  ripeness/color_description/shipment_comment에는 그 이유를 간단히 적으세요.
+"""
+
+
+@app.post("/api/quality/analyze", response_model=QualityAnalysisResponse)
+async def analyze_apple_quality(photo: UploadFile = File(...)):
+    if photo.content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail="jpeg/png/webp 이미지만 지원합니다.")
+
+    image_bytes = await photo.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="빈 파일입니다.")
+    if len(image_bytes) > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=400, detail="이미지 용량은 8MB를 초과할 수 없습니다.")
+
+    if not openai.api_key:
+        return QUALITY_ANALYSIS_FALLBACK
+
+    data_url = f"data:{photo.content_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": QUALITY_ANALYSIS_PROMPT},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            }],
+            max_tokens=400,
+            temperature=0.2,
+        )
+        content = response.choices[0].message["content"].strip()
+
+        # LLM이 간혹 JSON 블록(```json) 안에 응답을 감싸서 보내는 경우를 대비해 텍스트 파싱
+        if content.startswith("```json"):
+            content = content[7:]
+        elif content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+
+        parsed = json.loads(content.strip())
+        return {
+            "grade": parsed.get("grade", QUALITY_ANALYSIS_FALLBACK["grade"]),
+            "ripeness": parsed.get("ripeness", QUALITY_ANALYSIS_FALLBACK["ripeness"]),
+            "colorDescription": parsed.get("color_description", QUALITY_ANALYSIS_FALLBACK["colorDescription"]),
+            "shipmentComment": parsed.get("shipment_comment", QUALITY_ANALYSIS_FALLBACK["shipmentComment"]),
+            "confidence": parsed.get("confidence", QUALITY_ANALYSIS_FALLBACK["confidence"]),
+        }
+    except Exception as e:
+        # API 키가 없거나 호출 중 에러 발생 시, 프론트엔드가 깨지지 않도록 기본(Mock) 데이터 제공
+        print(f"Quality Analysis LLM Error: {e}")
+        return QUALITY_ANALYSIS_FALLBACK

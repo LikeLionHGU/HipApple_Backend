@@ -6,21 +6,32 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
+import com.lionapple.storage.dto.QualityAnalysisResult;
+import com.lionapple.storage.dto.QualityCheckResponse;
 import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional(readOnly = true)
 public class StorageService {
 
-    private final StorageRepository storageRepository;
+    private static final Set<String> ALLOWED_PHOTO_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    private static final long MAX_PHOTO_BYTES = 8L * 1024 * 1024;
 
-    public StorageService(StorageRepository storageRepository) {
+    private final StorageRepository storageRepository;
+    private final QualityAnalysisClient qualityAnalysisClient;
+
+    public StorageService(StorageRepository storageRepository, QualityAnalysisClient qualityAnalysisClient) {
         this.storageRepository = storageRepository;
+        this.qualityAnalysisClient = qualityAnalysisClient;
     }
 
     @Transactional
@@ -73,8 +84,26 @@ public class StorageService {
                 qualityStatus,
                 storage.getPreferredDate(),
                 analysisReason,
-                nearbyDates(storage.getStoreDate().toLocalDate())
+                nearbyDates(storage.getStoreDate().toLocalDate()),
+                storage.getQualityGrade(),
+                storage.getQualityRipeness(),
+                storage.getQualityColorDescription(),
+                storage.getQualityShipmentComment(),
+                storage.getQualityConfidence(),
+                storage.getQualityCheckedAt()
         );
+    }
+
+    @Transactional
+    public QualityCheckResponse analyzeQuality(Long userId, Long storageId, MultipartFile photo) {
+        Storage storage = getStorage(userId, storageId);
+        validatePhoto(photo);
+
+        QualityAnalysisResult result = qualityAnalysisClient.analyze(photo);
+        LocalDateTime checkedAt = LocalDateTime.now();
+        storage.applyQualityCheck(result, checkedAt);
+
+        return QualityCheckResponse.of(storageId, checkedAt, result);
     }
 
     @Transactional
@@ -90,6 +119,18 @@ public class StorageService {
     private Storage getStorage(Long userId, Long storageId) {
         return storageRepository.findByStorageIdAndUserId(storageId, userId)
                 .orElseThrow(() -> new NoSuchElementException("저장고를 찾을 수 없습니다."));
+    }
+
+    private static void validatePhoto(MultipartFile photo) {
+        if (photo == null || photo.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "사진 파일이 필요합니다.");
+        }
+        if (!ALLOWED_PHOTO_TYPES.contains(photo.getContentType())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "jpeg/png/webp 이미지만 업로드할 수 있습니다.");
+        }
+        if (photo.getSize() > MAX_PHOTO_BYTES) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이미지 용량은 8MB를 초과할 수 없습니다.");
+        }
     }
 
     private static int toYyyyMMdd(LocalDateTime dateTime) {

@@ -22,6 +22,12 @@ public record StorageDetailResponse(
         String qualityStatus,
         String shipmentRecommendation,
         String analysisReason,
-        List<Integer> nearbyDates
+        List<Integer> nearbyDates,
+        String qualityGrade,
+        String qualityRipeness,
+        String qualityColorDescription,
+        String qualityShipmentComment,
+        String qualityConfidence,
+        LocalDateTime qualityCheckedAt
 ) {
 }

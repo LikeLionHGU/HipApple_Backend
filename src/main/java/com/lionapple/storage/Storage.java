@@ -2,6 +2,7 @@ package com.lionapple.storage;
 
 import java.time.LocalDateTime;
 
+import com.lionapple.storage.dto.QualityAnalysisResult;
 import com.lionapple.storage.dto.StorageRequest;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -47,6 +48,21 @@ public class Storage {
 
     @Column(nullable = false)
     private String preferredDate;
+
+    private String qualityGrade;
+
+    @Column(columnDefinition = "TEXT")
+    private String qualityRipeness;
+
+    @Column(columnDefinition = "TEXT")
+    private String qualityColorDescription;
+
+    @Column(columnDefinition = "TEXT")
+    private String qualityShipmentComment;
+
+    private String qualityConfidence;
+
+    private LocalDateTime qualityCheckedAt;
 
     protected Storage() {
     }
@@ -98,6 +114,39 @@ public class Storage {
 
     public String getPreferredDate() {
         return preferredDate;
+    }
+
+    public String getQualityGrade() {
+        return qualityGrade;
+    }
+
+    public String getQualityRipeness() {
+        return qualityRipeness;
+    }
+
+    public String getQualityColorDescription() {
+        return qualityColorDescription;
+    }
+
+    public String getQualityShipmentComment() {
+        return qualityShipmentComment;
+    }
+
+    public String getQualityConfidence() {
+        return qualityConfidence;
+    }
+
+    public LocalDateTime getQualityCheckedAt() {
+        return qualityCheckedAt;
+    }
+
+    public void applyQualityCheck(QualityAnalysisResult result, LocalDateTime checkedAt) {
+        this.qualityGrade = result.grade();
+        this.qualityRipeness = result.ripeness();
+        this.qualityColorDescription = result.colorDescription();
+        this.qualityShipmentComment = result.shipmentComment();
+        this.qualityConfidence = result.confidence();
+        this.qualityCheckedAt = checkedAt;
     }
 
     public void update(StorageRequest request) {

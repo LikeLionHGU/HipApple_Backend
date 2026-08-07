@@ -2,16 +2,21 @@ package com.lionapple;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,9 +25,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.jayway.jsonpath.JsonPath;
+import com.lionapple.storage.QualityAnalysisClient;
+import com.lionapple.storage.dto.QualityAnalysisResult;
 import com.lionapple.user.GoogleTokenVerifier;
 import com.lionapple.user.dto.GoogleUserInfo;
 
@@ -35,6 +43,9 @@ class ApiSpecificationTest {
 
     @MockBean
     private GoogleTokenVerifier googleTokenVerifier;
+
+    @MockBean
+    private QualityAnalysisClient qualityAnalysisClient;
 
     private String login() throws Exception {
         when(googleTokenVerifier.verify(eq("google-id-token")))
@@ -108,32 +119,86 @@ class ApiSpecificationTest {
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0]").value("저장고A"));
 
-        mockMvc.perform(get("/storage")
+        String listResponse = mockMvc.perform(get("/storage")
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].storageId").exists())
                 .andExpect(jsonPath("$[0].name").value("저장고A"))
-                .andExpect(jsonPath("$[0].startDate").exists());
+                .andExpect(jsonPath("$[0].startDate").exists())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
+        long storageId = ((Number) JsonPath.read(listResponse, "$[0].storageId")).longValue();
 
-        mockMvc.perform(get("/storage/1")
+        mockMvc.perform(get("/storage/" + storageId)
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.temperature").exists())
                 .andExpect(jsonPath("$.humidity").exists())
                 .andExpect(jsonPath("$.ethylene").exists());
 
-        mockMvc.perform(put("/storage/1")
+        mockMvc.perform(put("/storage/" + storageId)
                         .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("Success"));
 
-        mockMvc.perform(delete("/storage/1")
+        mockMvc.perform(delete("/storage/" + storageId)
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("삭제 완료"));
+    }
+
+    @Test
+    void storageQualityCheckReturnsAiAnalysis() throws Exception {
+        String token = login();
+
+        mockMvc.perform(post("/storage")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"저장고B",
+                                  "appleType":"부사",
+                                  "storeDate":"2026-07-01T00:00:00",
+                                  "storageMethod":"CA",
+                                  "brix":15,
+                                  "hardness":10,
+                                  "condition":"우수",
+                                  "amount":5,
+                                  "preferredDate":"12월 중순"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        String listResponse = mockMvc.perform(get("/storage")
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
+        List<Number> storageIds = JsonPath.read(listResponse, "$[?(@.name=='저장고B')].storageId");
+        long storageId = storageIds.get(0).longValue();
+
+        when(qualityAnalysisClient.analyze(any())).thenReturn(new QualityAnalysisResult(
+                "특", "완숙 직전(약 90%)", "붉은빛이 고르게 퍼져 있으며 광택 양호", "1주일 이내 출하 권장", "medium"));
+
+        MockMultipartFile photo = new MockMultipartFile("photo", "apple.jpg", "image/jpeg", "fake-image-bytes".getBytes());
+
+        mockMvc.perform(multipart("/storage/" + storageId + "/quality-check")
+                        .file(photo)
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storageId").value(storageId))
+                .andExpect(jsonPath("$.grade").value("특"))
+                .andExpect(jsonPath("$.confidence").value("medium"))
+                .andExpect(jsonPath("$.disclaimer").exists());
+
+        mockMvc.perform(delete("/storage/" + storageId)
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -250,6 +315,7 @@ class ApiSpecificationTest {
                 .andExpect(jsonPath("$.paths['/storage/{storageId}'].get").exists())
                 .andExpect(jsonPath("$.paths['/storage/{storageId}'].put").exists())
                 .andExpect(jsonPath("$.paths['/storage/{storageId}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/storage/{storageId}/quality-check'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/price/dashboard'].get").exists());
     }
 }
