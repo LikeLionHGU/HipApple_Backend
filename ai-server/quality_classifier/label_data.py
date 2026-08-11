@@ -24,6 +24,12 @@ from pathlib import Path
 
 import openai
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # 현재 폴더 또는 상위 폴더의 .env 파일에서 OPENAI_API_KEY 등을 자동으로 읽어온다
+except ImportError:
+    pass  # python-dotenv 없으면 그냥 건너뜀 (환경변수를 직접 설정한 경우엔 문제 없음)
+
 # ai-server/app.py의 QUALITY_ANALYSIS_PROMPT와 동일 (프로덕션과 같은 기준으로 라벨링하기 위해 재사용)
 TEACHER_PROMPT = """당신은 사과 품질을 사진만으로 육안 판정하는 AI 검수 보조입니다.
 제공된 사과 사진 한 장을 보고, 다른 정보 없이 오직 사진에서 보이는 것만으로 판단하세요.

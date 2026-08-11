@@ -4,3 +4,4 @@ pandas
 scikit-learn
 joblib
 openai==0.28.1
+python-dotenv
