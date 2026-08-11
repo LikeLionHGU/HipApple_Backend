@@ -19,6 +19,7 @@ import com.lionapple.storage.dto.ShipmentAnalysisResponse;
 import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
+import com.lionapple.storage.dto.AnalysisPeriodSummaryResponse;
 import com.lionapple.price.PriceService;
 import com.lionapple.price.dto.PriceDashboardResponse;
 import org.springframework.http.HttpStatus;
@@ -82,9 +83,9 @@ public class StorageService {
 
         String shipmentRecommendation = "분석 전";
         List<ShipmentAnalysisResponse> shipmentAnalyses = new ArrayList<>();
+        PriceDashboardResponse priceData = null;
 
         if (storage.getAnalysisStartDate() != null) {
-            PriceDashboardResponse priceData = null;
             try {
                 priceData = priceService.getMarketDashboardData(LocalDate.now().toString(), "110001", "0601", "01");
             } catch (Exception e) {
@@ -130,6 +131,38 @@ public class StorageService {
             shipmentAnalyses = futureDates(null);
         }
 
+        int maxPredictedPrice = 4910;
+        int minPredictedPrice = 3850;
+        int avgPredictedPrice = 4438;
+        int priceIncreaseDays = 0;
+        int priceDecreaseDays = 0;
+        
+        if (priceData != null) {
+            List<PriceDashboardResponse.ChartData> combinedChart = new ArrayList<>();
+            if (priceData.chart_data != null) combinedChart.addAll(priceData.chart_data);
+            if (priceData.future_chart_data != null) combinedChart.addAll(priceData.future_chart_data);
+            
+            for (int i = 1; i < combinedChart.size(); i++) {
+                if (combinedChart.get(i).price > combinedChart.get(i-1).price) priceIncreaseDays++;
+                else if (combinedChart.get(i).price < combinedChart.get(i-1).price) priceDecreaseDays++;
+            }
+        }
+        
+        if (storage.getAnalysisStartDate() != null && shipmentAnalyses != null && !shipmentAnalyses.isEmpty()) {
+            maxPredictedPrice = shipmentAnalyses.stream().mapToInt(ShipmentAnalysisResponse::predictedPrice).max().orElse(maxPredictedPrice);
+            minPredictedPrice = shipmentAnalyses.stream().mapToInt(ShipmentAnalysisResponse::predictedPrice).min().orElse(minPredictedPrice);
+            avgPredictedPrice = (int) shipmentAnalyses.stream().mapToInt(ShipmentAnalysisResponse::predictedPrice).average().orElse(avgPredictedPrice);
+        }
+
+        AnalysisPeriodSummaryResponse periodSummary = new AnalysisPeriodSummaryResponse(
+                new AnalysisPeriodSummaryResponse.AiAnalysisSummary(
+                        storage.getAnalysisCount(), storage.getRecommendationCount(), maxPredictedPrice, minPredictedPrice, avgPredictedPrice, priceIncreaseDays, priceDecreaseDays
+                ),
+                new AnalysisPeriodSummaryResponse.StorageEnvironmentSummary(
+                        1.8, 91, 1650, 2, 1, 0, 94
+                )
+        );
+
         return new StorageDetailResponse(
                 storage.getStorageId(),
                 storage.getName(),
@@ -156,7 +189,8 @@ public class StorageService {
                 storage.getQualityColorDescription(),
                 storage.getQualityShipmentComment(),
                 storage.getQualityConfidence(),
-                storage.getQualityCheckedAt()
+                storage.getQualityCheckedAt(),
+                periodSummary
         );
     }
 

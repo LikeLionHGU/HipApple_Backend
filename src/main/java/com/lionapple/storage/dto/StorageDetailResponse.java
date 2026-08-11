@@ -31,7 +31,8 @@ public record StorageDetailResponse(
         String qualityColorDescription,
         String qualityShipmentComment,
         String qualityConfidence,
-        LocalDateTime qualityCheckedAt
+        LocalDateTime qualityCheckedAt,
+        AnalysisPeriodSummaryResponse periodSummary
 ) {
     public static StorageDetailResponse of(
             Storage storage,
@@ -42,7 +43,8 @@ public record StorageDetailResponse(
             String shipmentRecommendation,
             String analysisReason,
             String priceRecommendationReason,
-            List<ShipmentAnalysisResponse> shipmentAnalyses
+            List<ShipmentAnalysisResponse> shipmentAnalyses,
+            AnalysisPeriodSummaryResponse periodSummary
     ){
         int startDate = (storage.getAnalysisStartDate() != null)
                 ? storage.getAnalysisStartDate().getDayOfMonth()
@@ -74,7 +76,8 @@ public record StorageDetailResponse(
                 storage.getQualityColorDescription(),
                 storage.getQualityShipmentComment(),
                 storage.getQualityConfidence(),
-                storage.getQualityCheckedAt()
+                storage.getQualityCheckedAt(),
+                periodSummary
         );
     }
 
