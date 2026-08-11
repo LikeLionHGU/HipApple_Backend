@@ -73,6 +73,15 @@ public class StorageService {
         String analysisReason = "당도 " + storage.getBrix() + "Brix, 경도 " + storage.getHardness()
                 + "kgf, 저장방식 " + storage.getStorageMethod() + " 기준으로 품질 상태를 산정했습니다.";
 
+        String shipmentRecommendation = "분석 전";
+        if (storage.getAnalysisStartDate() != null) {
+            if (storage.getPreferredDate() != null && !storage.getPreferredDate().isEmpty() && !storage.getPreferredDate().equals("미정")) {
+                shipmentRecommendation = storage.getPreferredDate();
+            } else {
+                shipmentRecommendation = storage.getAnalysisStartDate().plusDays(5).toString();
+            }
+        }
+
         return new StorageDetailResponse(
                 storage.getStorageId(),
                 storage.getName(),
@@ -90,7 +99,7 @@ public class StorageService {
                 humidity,
                 ethylene,
                 qualityStatus,
-                storage.getPreferredDate(),
+                shipmentRecommendation,
                 analysisReason,
                 nearbyDates(storage.getStoreDate().toLocalDate()),
                 storage.getQualityGrade(),
@@ -139,7 +148,7 @@ public class StorageService {
             ));
 
             // 첫 '출하 고려' 추천 (희망 출하일이 있으면 사용, 없으면 분석 시작 5일 후)
-            LocalDate shipmentDate = (storage.getPreferredDate() != null && !storage.getPreferredDate().isEmpty())
+            LocalDate shipmentDate = (storage.getPreferredDate() != null && !storage.getPreferredDate().isEmpty() && !storage.getPreferredDate().equals("미정"))
                     ? LocalDate.parse(storage.getPreferredDate())
                     : analysisStart.plusDays(5);
 
