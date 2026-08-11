@@ -3,6 +3,7 @@ package com.lionapple;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -17,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +32,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.jayway.jsonpath.JsonPath;
 import com.lionapple.storage.QualityAnalysisClient;
+import com.lionapple.storage.QualityClassifierClient;
 import com.lionapple.storage.dto.QualityAnalysisResult;
+import com.lionapple.storage.dto.QualityClassifyResult;
 import com.lionapple.user.GoogleTokenVerifier;
 import com.lionapple.user.dto.GoogleUserInfo;
 
@@ -46,6 +50,9 @@ class ApiSpecificationTest {
 
     @MockBean
     private QualityAnalysisClient qualityAnalysisClient;
+
+    @MockBean
+    private QualityClassifierClient qualityClassifierClient;
 
     private String login() throws Exception {
         when(googleTokenVerifier.verify(eq("google-id-token")))
@@ -202,6 +209,58 @@ class ApiSpecificationTest {
     }
 
     @Test
+    void storageQualityClassifyReturnsLabelAndProbabilities() throws Exception {
+        String token = login();
+
+        mockMvc.perform(post("/storage")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"저장고C",
+                                  "appleType":"부사",
+                                  "storeDate":"2026-07-01T00:00:00",
+                                  "storageMethod":"CA",
+                                  "brix":15,
+                                  "hardness":10,
+                                  "condition":"우수",
+                                  "amount":5,
+                                  "preferredDate":"12월 중순"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        String listResponse = mockMvc.perform(get("/storage")
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
+        List<Number> storageIds = JsonPath.read(listResponse, "$[?(@.name=='저장고C')].storageId");
+        long storageId = storageIds.get(0).longValue();
+
+        when(qualityClassifierClient.classify(any(), eq(15), eq(10), eq("CA"), anyLong(), eq(5)))
+                .thenReturn(new QualityClassifyResult(
+                        "상",
+                        Map.of("상", 0.7, "중", 0.2, "하", 0.1),
+                        List.of(new QualityClassifyResult.FeatureContribution("mean_saturation", 0.14))));
+
+        MockMultipartFile photo = new MockMultipartFile("photo", "apple.jpg", "image/jpeg", "fake-image-bytes".getBytes());
+
+        mockMvc.perform(multipart("/storage/" + storageId + "/quality-classify")
+                        .file(photo)
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.label").value("상"))
+                .andExpect(jsonPath("$.probabilities.상").value(0.7))
+                .andExpect(jsonPath("$.topFeatures[0].name").value("mean_saturation"));
+
+        mockMvc.perform(delete("/storage/" + storageId)
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void priceForecastApisMatchSpecification() throws Exception {
         String token = login();
 
@@ -316,6 +375,7 @@ class ApiSpecificationTest {
                 .andExpect(jsonPath("$.paths['/storage/{storageId}'].put").exists())
                 .andExpect(jsonPath("$.paths['/storage/{storageId}'].delete").exists())
                 .andExpect(jsonPath("$.paths['/storage/{storageId}/quality-check'].post").exists())
+                .andExpect(jsonPath("$.paths['/storage/{storageId}/quality-classify'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/price/dashboard'].get").exists());
     }
 }

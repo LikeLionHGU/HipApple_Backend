@@ -1,11 +1,14 @@
 import base64
 import os
+import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import requests
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
@@ -13,7 +16,7 @@ from prophet import Prophet
 import openai  # OpenAI API 호출용
 import json
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Tuple
 
 app = FastAPI()
 
@@ -27,6 +30,16 @@ app.add_middleware(
 
 # 키가 없으면 LLM 호출이 실패하고 아래 fallback 문장이 사용됨
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
+
+# quality_classifier/(이미지+Storage 필드 기반 상/중/하 RandomForest 분류기, 학습/실험용)
+# model.joblib이 아직 없으면(실데이터로 학습 전) None으로 두고 엔드포인트에서 503을 반환한다.
+QC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quality_classifier")
+QC_MODEL_PATH = os.path.join(QC_DIR, "model.joblib")
+sys.path.insert(0, QC_DIR)
+try:
+    from predict import predict as classify_apple_quality  # quality_classifier/predict.py
+except ImportError:
+    classify_apple_quality = None
 
 # --- Swagger UI (API 문서) 명세를 위한 Pydantic 응답 모델 정의 ---
 class SearchInfo(BaseModel):
@@ -78,6 +91,12 @@ class QualityAnalysisResponse(BaseModel):
     colorDescription: str = Field(..., description="색상/착색 상태에 대한 짧은 문장")
     shipmentComment: str = Field(..., description="출하 시점에 대한 조언 1~2문장")
     confidence: str = Field(..., description="판정 신뢰도 (high/medium/low)")
+
+
+class QualityClassifyResponse(BaseModel):
+    label: str = Field(..., description="예측 등급 (상/중/하)")
+    probabilities: dict = Field(..., description="클래스별 확률")
+    topFeatures: List[Tuple[str, float]] = Field(..., description="판단에 크게 기여한 특징 상위 5개 [이름, 중요도]")
 # ------------------------------------------------------------------
 
 # 공공데이터포털 - 공영도매시장 실시간 경락 데이터
@@ -467,3 +486,46 @@ async def analyze_apple_quality(photo: UploadFile = File(...)):
         # API 키가 없거나 호출 중 에러 발생 시, 프론트엔드가 깨지지 않도록 기본(Mock) 데이터 제공
         print(f"Quality Analysis LLM Error: {e}")
         return QUALITY_ANALYSIS_FALLBACK
+
+
+@app.post("/api/quality/classify", response_model=QualityClassifyResponse)
+async def classify_apple_quality_endpoint(
+    photo: UploadFile = File(...),
+    brix: float = Form(...),
+    hardness: float = Form(...),
+    storage_method: str = Form(...),
+    storage_days: float = Form(...),
+    amount: float = Form(...),
+):
+    """quality_classifier/(이미지 특징 + Storage 필드 -> RandomForest) 기반 실험적 상/중/하 분류.
+    gpt-4o-mini를 쓰는 /api/quality/analyze와 달리 로컬에서 학습한 model.joblib으로 판정한다."""
+    if photo.content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail="jpeg/png/webp 이미지만 지원합니다.")
+
+    image_bytes = await photo.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="빈 파일입니다.")
+    if len(image_bytes) > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=400, detail="이미지 용량은 8MB를 초과할 수 없습니다.")
+
+    if classify_apple_quality is None or not os.path.exists(QC_MODEL_PATH):
+        raise HTTPException(status_code=503, detail="분류 모델이 아직 준비되지 않았습니다 (model.joblib 없음).")
+
+    suffix = Path(photo.filename or "photo.jpg").suffix or ".jpg"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(image_bytes)
+        tmp_path = tmp.name
+
+    try:
+        result = classify_apple_quality(
+            tmp_path, brix, hardness, storage_method, storage_days, amount,
+            model_path=QC_MODEL_PATH,
+        )
+    finally:
+        os.remove(tmp_path)
+
+    return {
+        "label": result["label"],
+        "probabilities": result["probabilities"],
+        "topFeatures": result["top_features"],
+    }

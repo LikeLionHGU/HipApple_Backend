@@ -4,15 +4,14 @@ import java.util.List;
 
 import com.lionapple.common.ApiResult;
 import com.lionapple.common.auth.CurrentUserId;
-import com.lionapple.storage.dto.MajorScheduleResponse;
 import com.lionapple.storage.dto.QualityCheckResponse;
+import com.lionapple.storage.dto.QualityClassifyResponse;
 import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -78,19 +77,6 @@ public class StorageController {
         storageService.delete(userId, storageId);
         return ApiResult.deleted();
     }
-    @PostMapping("/{storageId}/analyze")
-    public ResponseEntity<StorageDetailResponse> startAnalysis(@CurrentUserId Long userId,@PathVariable Long storageId) {
-        StorageDetailResponse response = storageService.startAnalysis(userId,storageId);
-        return ResponseEntity.ok(response);
-    }
-    @GetMapping("/{storageId}/major-schedules")
-    public ResponseEntity<List<MajorScheduleResponse>> getMajorSchedules(
-            @CurrentUserId Long userId,
-            @PathVariable Long storageId
-    ) {
-        List<MajorScheduleResponse> response = storageService.getMajorSchedules(userId, storageId);
-        return ResponseEntity.ok(response);
-    }
 
     @PostMapping(value = "/{storageId}/quality-check", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "사진 기반 AI 사과 품질 판정")
@@ -100,5 +86,15 @@ public class StorageController {
             @RequestPart("photo") MultipartFile photo
     ) {
         return storageService.analyzeQuality(userId, storageId, photo);
+    }
+
+    @PostMapping(value = "/{storageId}/quality-classify", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "이미지+저장고 데이터 기반 상/중/하 분류 (실험적, RandomForest)")
+    public QualityClassifyResponse classifyQuality(
+            @CurrentUserId Long userId,
+            @PathVariable Long storageId,
+            @RequestPart("photo") MultipartFile photo
+    ) {
+        return storageService.classifyQuality(userId, storageId, photo);
     }
 }

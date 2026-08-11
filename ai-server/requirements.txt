@@ -4,6 +4,7 @@ python-multipart
 requests
 pandas
 numpy
+pillow
 prophet
 openai==0.28.1
 scikit-learn

@@ -1,0 +1,11 @@
+image,brix,hardness,storageMethod,storageDays,amount,label
+photos\apple1.jpg,12,9,CA,5,3,하
+photos\apple2.jpg,14,10,MA,10,5,하
+photos\apple3.jpg,11,8,CA,15,2,중
+photos\apple4.jpg,15,11,MA,20,7,중
+photos\apple5.jpg,13,9,CA,25,4,중
+photos\apple6.jpg,16,12,MA,30,6,중
+photos\apple7.jpg,10,7,CA,35,1,중
+photos\apple8.jpg,14,10,MA,40,8,중
+photos\apple9.jpg,17,11,CA,50,5,중
+photos\apple10.jpg,12,8,MA,60,9,중
