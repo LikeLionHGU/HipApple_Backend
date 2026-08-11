@@ -104,7 +104,7 @@ public class StorageService {
         Storage storage = getStorage(userId, storageId);
         validatePhoto(photo);
 
-        QualityAnalysisResult result = qualityAnalysisClient.analyze(photo);
+        QualityAnalysisResult result = qualityAnalysisClient.analyze(photo, storage);
         LocalDateTime checkedAt = LocalDateTime.now();
         storage.applyQualityCheck(result, checkedAt);
 
@@ -150,7 +150,7 @@ public class StorageService {
 
     private static void validatePhoto(MultipartFile photo) {
         if (photo == null || photo.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "사진 파일이 필요합니다.");
+            return; // 사진 미제출 허용
         }
         if (!ALLOWED_PHOTO_TYPES.contains(photo.getContentType())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "jpeg/png/webp 이미지만 업로드할 수 있습니다.");

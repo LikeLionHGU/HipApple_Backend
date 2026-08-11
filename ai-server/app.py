@@ -436,37 +436,81 @@ QUALITY_ANALYSIS_PROMPT = """당신은 사과 품질을 사진만으로 육안 �
 
 
 @app.post("/api/quality/analyze", response_model=QualityAnalysisResponse)
-async def analyze_apple_quality(photo: UploadFile = File(...)):
-    if photo.content_type not in ALLOWED_PHOTO_TYPES:
-        raise HTTPException(status_code=400, detail="jpeg/png/webp 이미지만 지원합니다.")
-
-    image_bytes = await photo.read()
-    if not image_bytes:
-        raise HTTPException(status_code=400, detail="빈 파일입니다.")
-    if len(image_bytes) > MAX_PHOTO_BYTES:
-        raise HTTPException(status_code=400, detail="이미지 용량은 8MB를 초과할 수 없습니다.")
-
+async def analyze_apple_quality(
+    photo: UploadFile = File(None),
+    brix: float = Form(None),
+    hardness: float = Form(None),
+    storage_method: str = Form(None),
+    storage_days: int = Form(None)
+):
     if not openai.api_key:
         return QUALITY_ANALYSIS_FALLBACK
 
-    data_url = f"data:{photo.content_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+    has_photo = photo is not None and photo.filename != ""
+    data_url = None
+
+    if has_photo:
+        if photo.content_type not in ALLOWED_PHOTO_TYPES:
+            raise HTTPException(status_code=400, detail="jpeg/png/webp 이미지만 지원합니다.")
+        image_bytes = await photo.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="빈 파일입니다.")
+        if len(image_bytes) > MAX_PHOTO_BYTES:
+            raise HTTPException(status_code=400, detail="이미지 용량은 8MB를 초과할 수 없습니다.")
+        data_url = f"data:{photo.content_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+
+    storage_info = ""
+    if brix is not None:
+        storage_info += f"당도: {brix} Brix, "
+    if hardness is not None:
+        storage_info += f"경도: {hardness} kgf, "
+    if storage_method is not None:
+        storage_info += f"저장방식: {storage_method}, "
+    if storage_days is not None:
+        storage_info += f"저장일수: {storage_days}일"
+
+    if has_photo:
+        prompt_text = QUALITY_ANALYSIS_PROMPT
+        if storage_info:
+            prompt_text += f"\n\n참고 저장고 데이터: {storage_info}\n이 데이터를 고려하여 종합적으로 판정하세요."
+        
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt_text},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ],
+        }]
+    else:
+        prompt_text = f"""당신은 사과 저장 데이터(당도, 경도 등)만으로 품질을 추정하는 AI 검수 보조입니다. 
+사진이 없으므로 아래 데이터에 기반해 보수적으로 판정하세요.
+반드시 아래 JSON 형식으로만 답하세요. 다른 설명, 인사말, 코드블록 표시는 절대 포함하지 마세요.
+
+{{
+  "grade": "특|상|중|하|판정불가 중 하나",
+  "ripeness": "데이터 상 추정되는 숙성 정도에 대한 짧은 한 문장",
+  "color_description": "사진이 없으므로 '확인 불가' 등으로 짧게 표기",
+  "shipment_comment": "저장 일수와 당도, 경도를 고려한 출하 시점 조언 1~2문장",
+  "confidence": "high|medium|low"
+}}
+
+제공된 데이터:
+{storage_info if storage_info else "데이터 없음"}
+
+판정 기준:
+- 사진이 없으므로 confidence는 무조건 "low" 또는 "medium"으로 설정하세요.
+- 데이터가 전혀 없다면 grade를 "판정불가"로 하세요."""
+        messages = [{"role": "user", "content": prompt_text}]
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": QUALITY_ANALYSIS_PROMPT},
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                ],
-            }],
+            messages=messages,
             max_tokens=400,
             temperature=0.2,
         )
         content = response.choices[0].message["content"].strip()
 
-        # LLM이 간혹 JSON 블록(```json) 안에 응답을 감싸서 보내는 경우를 대비해 텍스트 파싱
         if content.startswith("```json"):
             content = content[7:]
         elif content.startswith("```"):
@@ -483,7 +527,6 @@ async def analyze_apple_quality(photo: UploadFile = File(...)):
             "confidence": parsed.get("confidence", QUALITY_ANALYSIS_FALLBACK["confidence"]),
         }
     except Exception as e:
-        # API 키가 없거나 호출 중 에러 발생 시, 프론트엔드가 깨지지 않도록 기본(Mock) 데이터 제공
         print(f"Quality Analysis LLM Error: {e}")
         return QUALITY_ANALYSIS_FALLBACK
 

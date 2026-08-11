@@ -28,12 +28,22 @@ public class QualityAnalysisClient {
         this.aiServerUrl = aiServerUrl;
     }
 
-    public QualityAnalysisResult analyze(MultipartFile photo) {
+    public QualityAnalysisResult analyze(MultipartFile photo, Storage storage) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("photo", toResource(photo));
+        
+        if (photo != null && !photo.isEmpty()) {
+            body.add("photo", toResource(photo));
+        }
+
+        body.add("brix", storage.getBrix());
+        body.add("hardness", storage.getHardness());
+        body.add("storage_method", storage.getStorageMethod());
+        
+        long days = java.time.temporal.ChronoUnit.DAYS.between(storage.getStoreDate().toLocalDate(), java.time.LocalDate.now());
+        body.add("storage_days", Math.max(days, 0));
 
         try {
             return restTemplate.postForObject(

@@ -83,7 +83,7 @@ public class StorageController {
     public QualityCheckResponse checkQuality(
             @CurrentUserId Long userId,
             @PathVariable Long storageId,
-            @RequestPart("photo") MultipartFile photo
+            @RequestPart(value = "photo", required = false) MultipartFile photo
     ) {
         return storageService.analyzeQuality(userId, storageId, photo);
     }
