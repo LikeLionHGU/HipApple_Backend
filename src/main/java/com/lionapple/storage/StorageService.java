@@ -15,9 +15,12 @@ import com.lionapple.storage.dto.QualityAnalysisResult;
 import com.lionapple.storage.dto.QualityCheckResponse;
 import com.lionapple.storage.dto.QualityClassifyResponse;
 import com.lionapple.storage.dto.QualityClassifyResult;
+import com.lionapple.storage.dto.ShipmentAnalysisResponse;
 import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
+import com.lionapple.price.PriceService;
+import com.lionapple.price.dto.PriceDashboardResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,15 +37,18 @@ public class StorageService {
     private final StorageRepository storageRepository;
     private final QualityAnalysisClient qualityAnalysisClient;
     private final QualityClassifierClient qualityClassifierClient;
+    private final PriceService priceService;
 
     public StorageService(
             StorageRepository storageRepository,
             QualityAnalysisClient qualityAnalysisClient,
-            QualityClassifierClient qualityClassifierClient
+            QualityClassifierClient qualityClassifierClient,
+            PriceService priceService
     ) {
         this.storageRepository = storageRepository;
         this.qualityAnalysisClient = qualityAnalysisClient;
         this.qualityClassifierClient = qualityClassifierClient;
+        this.priceService = priceService;
     }
 
     @Transactional
@@ -74,12 +80,42 @@ public class StorageService {
                 + "kgf, 저장방식 " + storage.getStorageMethod() + " 기준으로 품질 상태를 산정했습니다.";
 
         String shipmentRecommendation = "분석 전";
+        List<ShipmentAnalysisResponse> shipmentAnalyses = new ArrayList<>();
+
         if (storage.getAnalysisStartDate() != null) {
+            PriceDashboardResponse priceData = null;
+            try {
+                priceData = priceService.getMarketDashboardData(LocalDate.now().toString(), "110001", "0601", "01");
+            } catch (Exception e) {
+                // Ignore exception and use fallback
+            }
+
+            LocalDate bestDate = storage.getAnalysisStartDate().plusDays(5);
+            int bestPrice = 0;
+
+            if (priceData != null && priceData.future_chart_data != null) {
+                for (PriceDashboardResponse.ChartData data : priceData.future_chart_data) {
+                    LocalDate d = LocalDate.parse(data.date);
+                    // 5일 이내의 데이터만 고려
+                    if (!d.isBefore(storage.getAnalysisStartDate()) && !d.isAfter(storage.getAnalysisStartDate().plusDays(5))) {
+                        if (data.price > bestPrice) {
+                            bestPrice = data.price;
+                            bestDate = d;
+                        }
+                    }
+                }
+            }
+
             if (storage.getPreferredDate() != null && !storage.getPreferredDate().isEmpty() && !storage.getPreferredDate().equals("미정")) {
                 shipmentRecommendation = storage.getPreferredDate();
+                bestDate = LocalDate.parse(storage.getPreferredDate());
             } else {
-                shipmentRecommendation = storage.getAnalysisStartDate().plusDays(5).toString();
+                shipmentRecommendation = bestDate.toString();
             }
+            
+            shipmentAnalyses = nearbyDates(bestDate, priceData);
+        } else {
+            shipmentAnalyses = nearbyDates(storage.getStoreDate().toLocalDate(), null);
         }
 
         return new StorageDetailResponse(
@@ -101,7 +137,7 @@ public class StorageService {
                 qualityStatus,
                 shipmentRecommendation,
                 analysisReason,
-                nearbyDates(storage.getStoreDate().toLocalDate()),
+                shipmentAnalyses,
                 storage.getQualityGrade(),
                 storage.getQualityRipeness(),
                 storage.getQualityColorDescription(),
@@ -245,12 +281,53 @@ public class StorageService {
         return date.getYear() * 10000 + date.getMonthValue() * 100 + date.getDayOfMonth();
     }
 
-    private static List<Integer> nearbyDates(LocalDate date) {
-        List<Integer> dates = new ArrayList<>();
-        for (int offset = -2; offset <= 2; offset++) {
-            LocalDate nearby = date.plusDays(offset);
-            dates.add(nearby.getYear() * 10000 + nearby.getMonthValue() * 100 + nearby.getDayOfMonth());
+    private static List<ShipmentAnalysisResponse> nearbyDates(LocalDate centerDate, PriceDashboardResponse priceData) {
+        List<ShipmentAnalysisResponse> list = new ArrayList<>();
+        
+        int avgPrice = 2000;
+        if (priceData != null && priceData.price_summary != null) {
+            avgPrice = priceData.price_summary.weekly_average_price;
         }
-        return dates;
+
+        for (int offset = -2; offset <= 2; offset++) {
+            LocalDate d = centerDate.plusDays(offset);
+            int price = 0;
+            
+            if (priceData != null) {
+                // Try to find in future
+                if (priceData.future_chart_data != null) {
+                    for (PriceDashboardResponse.ChartData cd : priceData.future_chart_data) {
+                        if (cd.date.equals(d.toString())) {
+                            price = cd.price;
+                            break;
+                        }
+                    }
+                }
+                // Try to find in past if not found in future
+                if (price == 0 && priceData.chart_data != null) {
+                    for (PriceDashboardResponse.ChartData cd : priceData.chart_data) {
+                        // past date format is "m/d" like "8/7"
+                        String md = d.getMonthValue() + "/" + d.getDayOfMonth();
+                        if (cd.date.equals(md)) {
+                            price = cd.price;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (price == 0) price = avgPrice + (offset * 100);
+
+            String status = price > avgPrice ? "우수" : (price < avgPrice - 500 ? "불량" : "양호");
+            String event = (d.getMonthValue() == 9 && (d.getDayOfMonth() >= 15 && d.getDayOfMonth() <= 17)) ? "명절" : null;
+
+            list.add(new ShipmentAnalysisResponse(
+                    d.toString(),
+                    price,
+                    status,
+                    event
+            ));
+        }
+        return list;
     }
 }

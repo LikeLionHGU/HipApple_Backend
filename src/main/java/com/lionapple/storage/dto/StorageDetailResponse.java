@@ -24,7 +24,7 @@ public record StorageDetailResponse(
         String qualityStatus,
         String shipmentRecommendation,
         String analysisReason,
-        List<Integer> nearbyDates,
+        List<ShipmentAnalysisResponse> shipmentAnalyses,
         String qualityGrade,
         String qualityRipeness,
         String qualityColorDescription,
@@ -40,7 +40,7 @@ public record StorageDetailResponse(
             String qualityStatus,
             String shipmentRecommendation,
             String analysisReason,
-            List<Integer> nearbyDates
+            List<ShipmentAnalysisResponse> shipmentAnalyses
     ){
         int startDate = (storage.getAnalysisStartDate() != null)
                 ? storage.getAnalysisStartDate().getDayOfMonth()
@@ -65,7 +65,7 @@ public record StorageDetailResponse(
                 qualityStatus,
                 shipmentRecommendation,
                 analysisReason,
-                nearbyDates,
+                shipmentAnalyses,
                 storage.getQualityGrade(),
                 storage.getQualityRipeness(),
                 storage.getQualityColorDescription(),

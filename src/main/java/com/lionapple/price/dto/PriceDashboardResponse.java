@@ -8,6 +8,7 @@ public class PriceDashboardResponse {
     public CurrentPriceInfo current_price_info;
     public PriceSummary price_summary;
     public List<ChartData> chart_data;
+    public List<ChartData> future_chart_data;
     public AiMarketAnalysis ai_market_analysis;
 
     public static class SearchInfo {

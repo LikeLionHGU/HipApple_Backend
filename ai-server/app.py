@@ -82,6 +82,7 @@ class DashboardResponse(BaseModel):
     current_price_info: CurrentPriceInfo
     price_summary: PriceSummary
     chart_data: List[ChartDataPoint]
+    future_chart_data: List[ChartDataPoint]
     ai_market_analysis: AiMarketAnalysis
 
 
@@ -334,6 +335,13 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
             "price": int(row['y'])
         })
 
+    future_chart_list = []
+    for _, row in future_forecast.iterrows():
+        future_chart_list.append({
+            "date": row['ds'].strftime('%Y-%m-%d'),
+            "price": int(row['yhat'])
+        })
+
     summary = {
         "today_price": price_today,
         "prev_price": price_prev,
@@ -343,7 +351,7 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
         "monthly_range": f"최근 {len(df)}일 평균",
         "basis_date": past_7_days.iloc[-1]['ds'].strftime("%m월 %d일"),
     }
-    return summary, chart_list, report_text, history_reports, market_nm, variety_nm
+    return summary, chart_list, future_chart_list, report_text, history_reports, market_nm, variety_nm
 
 
 @app.get("/api/price/dashboard", response_model=DashboardResponse)
@@ -358,7 +366,7 @@ def get_price_dashboard(
     if cached and time.time() - cached[0] < DASHBOARD_CACHE_TTL:
         return cached[1]
 
-    summary, chart_data, ai_report, history_reports, market_nm, variety_nm = process_market_analysis(
+    summary, chart_data, future_chart_data, ai_report, history_reports, market_nm, variety_nm = process_market_analysis(
         date, market_code, item_code, variety_code)
 
     change_rate = 0.0
@@ -389,6 +397,7 @@ def get_price_dashboard(
         "monthly_basis_range": summary["monthly_range"]
       },
       "chart_data": chart_data,
+      "future_chart_data": future_chart_data,
       "ai_market_analysis": {
         "title": "최근 7일 가격 동향 요약",
         "report_text": ai_report,
