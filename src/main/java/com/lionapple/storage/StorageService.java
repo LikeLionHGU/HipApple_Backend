@@ -106,12 +106,7 @@ public class StorageService {
                 }
             }
 
-            if (storage.getPreferredDate() != null && !storage.getPreferredDate().isEmpty() && !storage.getPreferredDate().equals("미정")) {
-                shipmentRecommendation = storage.getPreferredDate();
-                bestDate = LocalDate.parse(storage.getPreferredDate());
-            } else {
-                shipmentRecommendation = bestDate.toString();
-            }
+            shipmentRecommendation = bestDate.toString();
             
             shipmentAnalyses = nearbyDates(bestDate, priceData);
         } else {
