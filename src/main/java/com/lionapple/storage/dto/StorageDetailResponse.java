@@ -24,6 +24,7 @@ public record StorageDetailResponse(
         String qualityStatus,
         String shipmentRecommendation,
         String analysisReason,
+        String priceRecommendationReason,
         List<ShipmentAnalysisResponse> shipmentAnalyses,
         String qualityGrade,
         String qualityRipeness,
@@ -40,6 +41,7 @@ public record StorageDetailResponse(
             String qualityStatus,
             String shipmentRecommendation,
             String analysisReason,
+            String priceRecommendationReason,
             List<ShipmentAnalysisResponse> shipmentAnalyses
     ){
         int startDate = (storage.getAnalysisStartDate() != null)
@@ -65,6 +67,7 @@ public record StorageDetailResponse(
                 qualityStatus,
                 shipmentRecommendation,
                 analysisReason,
+                priceRecommendationReason,
                 shipmentAnalyses,
                 storage.getQualityGrade(),
                 storage.getQualityRipeness(),

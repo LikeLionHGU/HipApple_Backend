@@ -78,6 +78,7 @@ public class StorageService {
         String qualityStatus = storage.getCondition() + " / 출하 가능";
         String analysisReason = "당도 " + storage.getBrix() + "Brix, 경도 " + storage.getHardness()
                 + "kgf, 저장방식 " + storage.getStorageMethod() + " 기준으로 품질 상태를 산정했습니다.";
+        String priceRecommendationReason = "";
 
         String shipmentRecommendation = "분석 전";
         List<ShipmentAnalysisResponse> shipmentAnalyses = new ArrayList<>();
@@ -96,21 +97,37 @@ public class StorageService {
             if (priceData != null && priceData.future_chart_data != null) {
                 for (PriceDashboardResponse.ChartData data : priceData.future_chart_data) {
                     LocalDate d = LocalDate.parse(data.date);
-                    // 5일 이내의 데이터만 고려
-                    if (!d.isBefore(storage.getAnalysisStartDate()) && !d.isAfter(storage.getAnalysisStartDate().plusDays(5))) {
-                        if (data.price > bestPrice) {
-                            bestPrice = data.price;
-                            bestDate = d;
-                        }
+                    if (data.price > bestPrice) {
+                        bestPrice = data.price;
+                        bestDate = d;
+                    }
+                }
+            }
+
+            int todayPrice = bestPrice;
+            if (priceData != null && priceData.future_chart_data != null) {
+                for (PriceDashboardResponse.ChartData data : priceData.future_chart_data) {
+                    if (data.date.equals(LocalDate.now().toString())) {
+                        todayPrice = data.price;
+                        break;
                     }
                 }
             }
 
             shipmentRecommendation = bestDate.toString();
+            String formattedDate = bestDate.getMonthValue() + "월 " + bestDate.getDayOfMonth() + "일";
+            long diff = (long)(bestPrice - todayPrice) * storage.getAmount();
+            long diffManWon = diff / 10000;
+
+            if (diffManWon > 0) {
+                priceRecommendationReason = String.format("오늘 출하 시보다 약 %,d만 원 높은 기대 매출이 예상되어, %s 출하를 추천해요", diffManWon, formattedDate);
+            } else {
+                priceRecommendationReason = String.format("현재 가격이 가장 좋은 시기입니다. 오늘(%s) 출하를 추천해요", formattedDate);
+            }
             
-            shipmentAnalyses = nearbyDates(bestDate, priceData);
+            shipmentAnalyses = futureDates(priceData);
         } else {
-            shipmentAnalyses = nearbyDates(storage.getStoreDate().toLocalDate(), null);
+            shipmentAnalyses = futureDates(null);
         }
 
         return new StorageDetailResponse(
@@ -132,6 +149,7 @@ public class StorageService {
                 qualityStatus,
                 shipmentRecommendation,
                 analysisReason,
+                priceRecommendationReason,
                 shipmentAnalyses,
                 storage.getQualityGrade(),
                 storage.getQualityRipeness(),
@@ -276,7 +294,7 @@ public class StorageService {
         return date.getYear() * 10000 + date.getMonthValue() * 100 + date.getDayOfMonth();
     }
 
-    private static List<ShipmentAnalysisResponse> nearbyDates(LocalDate centerDate, PriceDashboardResponse priceData) {
+    private static List<ShipmentAnalysisResponse> futureDates(PriceDashboardResponse priceData) {
         List<ShipmentAnalysisResponse> list = new ArrayList<>();
         
         int avgPrice = 2000;
@@ -284,44 +302,22 @@ public class StorageService {
             avgPrice = priceData.price_summary.weekly_average_price;
         }
 
-        for (int offset = -2; offset <= 2; offset++) {
-            LocalDate d = centerDate.plusDays(offset);
-            int price = 0;
-            
-            if (priceData != null) {
-                // Try to find in future
-                if (priceData.future_chart_data != null) {
-                    for (PriceDashboardResponse.ChartData cd : priceData.future_chart_data) {
-                        if (cd.date.equals(d.toString())) {
-                            price = cd.price;
-                            break;
-                        }
-                    }
-                }
-                // Try to find in past if not found in future
-                if (price == 0 && priceData.chart_data != null) {
-                    for (PriceDashboardResponse.ChartData cd : priceData.chart_data) {
-                        // past date format is "m/d" like "8/7"
-                        String md = d.getMonthValue() + "/" + d.getDayOfMonth();
-                        if (cd.date.equals(md)) {
-                            price = cd.price;
-                            break;
-                        }
-                    }
-                }
+        if (priceData != null && priceData.future_chart_data != null) {
+            for (PriceDashboardResponse.ChartData cd : priceData.future_chart_data) {
+                int price = cd.price;
+                LocalDate d = LocalDate.parse(cd.date);
+                String status = price > avgPrice ? "우수" : (price < avgPrice - 500 ? "불량" : "양호");
+                String event = (d.getMonthValue() == 9 && (d.getDayOfMonth() >= 15 && d.getDayOfMonth() <= 17)) ? "명절" : null;
+                list.add(new ShipmentAnalysisResponse(cd.date, price, status, event));
             }
-
-            if (price == 0) price = avgPrice + (offset * 100);
-
-            String status = price > avgPrice ? "우수" : (price < avgPrice - 500 ? "불량" : "양호");
-            String event = (d.getMonthValue() == 9 && (d.getDayOfMonth() >= 15 && d.getDayOfMonth() <= 17)) ? "명절" : null;
-
-            list.add(new ShipmentAnalysisResponse(
-                    d.toString(),
-                    price,
-                    status,
-                    event
-            ));
+        } else {
+            for (int i = 0; i < 7; i++) {
+                LocalDate d = LocalDate.now().plusDays(i);
+                int price = avgPrice + (i * 100);
+                String status = price > avgPrice ? "우수" : (price < avgPrice - 500 ? "불량" : "양호");
+                String event = (d.getMonthValue() == 9 && (d.getDayOfMonth() >= 15 && d.getDayOfMonth() <= 17)) ? "명절" : null;
+                list.add(new ShipmentAnalysisResponse(d.toString(), price, status, event));
+            }
         }
         return list;
     }
