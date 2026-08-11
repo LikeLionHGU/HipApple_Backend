@@ -80,6 +80,20 @@ def train(dataset_path: str, out_path: str, test_size: float = 0.2, seed: int = 
     for name, score in importances[:8]:
         print(f"  {name:14s} {score:.3f}")
 
+    # 전체 데이터(학습 + 평가 포함)에 대한 예측 결과 출력
+    print(f"\n전체 {len(df)}건 예측 결과 (학습에 쓰인 데이터 포함):")
+    y_pred_all = model.predict(X)
+    result_df = pd.DataFrame({
+        "image": df["image"],
+        "실제": y,
+        "예측": y_pred_all,
+        "일치": (y.values == y_pred_all)
+    })
+    print(result_df.to_string(index=False))
+
+    mismatch_count = (~result_df["일치"]).sum()
+    print(f"\n전체 {len(df)}건 중 {mismatch_count}건 불일치")
+
     joblib.dump({
         "model": model,
         "feature_names": list(X.columns),
