@@ -217,14 +217,14 @@ def build_demo_series(date: str):
     dates = pd.date_range(start='2026-05-01', end=date, freq='D')
     prices = []
     for i, d in enumerate(dates):
-        base = 35000
-        trend = (i * 120)
+        base = 4500
+        trend = (i * 15)
         if d >= datetime(2026, 7, 5):
-            trend += (i - 60) * 300
-        random_noise = np.random.normal(0, 500)
+            trend += (i - 60) * 40
+        random_noise = np.random.normal(0, 150)
         prices.append(base + trend + random_noise)
     df = pd.DataFrame({'ds': dates, 'y': prices})
-    df.iloc[-1, df.columns.get_loc('y')] = 43800
+    df.iloc[-1, df.columns.get_loc('y')] = 5300
     return df
 
 
