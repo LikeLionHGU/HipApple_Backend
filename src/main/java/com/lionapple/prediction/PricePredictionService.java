@@ -17,16 +17,17 @@ import java.util.List;
 public class PricePredictionService {
 
     private static final int TABLE_ROW_LIMIT = 5;
+    private static final String DEFAULT_CROP_TYPE = "APPLE";
 
     private final PricePredictionRepository pricePredictionRepository;
 
-    public PricePredictionHistoryResponse getHistory(Long userId, String cropType, PredictionPeriod period) {
+    public PricePredictionHistoryResponse getHistory(PredictionPeriod period) {
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusMonths(period.getMonths());
 
         List<PricePrediction> predictions = pricePredictionRepository
-                .findByUserIdAndCropTypeAndPredictionDateBetweenOrderByPredictionDateAsc(
-                        userId, cropType, startDate, endDate);
+                .findByCropTypeAndPredictionDateBetweenOrderByPredictionDateAsc(
+                        DEFAULT_CROP_TYPE, startDate, endDate);
 
         List<PricePredictionChartPoint> chartPoints = predictions.stream()
                 .map(p -> new PricePredictionChartPoint(
