@@ -79,7 +79,7 @@ public class StorageController {
     }
 
     @PostMapping(value = "/{storageId}/quality-check", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "사진 기반 AI 사과 품질 판정")
+    @Operation(summary = "AI 사과 품질 판정 (사진 미제출 시 저장고 데이터로 예측)")
     public QualityCheckResponse checkQuality(
             @CurrentUserId Long userId,
             @PathVariable Long storageId,
