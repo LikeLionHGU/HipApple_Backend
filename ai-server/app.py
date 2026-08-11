@@ -3,6 +3,8 @@ import os
 import sys
 import tempfile
 import time
+from dotenv import load_dotenv
+load_dotenv()
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -181,7 +183,19 @@ def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "
             continue
         if prc <= 0 or unit_kg <= 0 or qty <= 0 or (r.get("unit_nm") or "kg") != "kg":
             continue
-        total_won += prc * qty
+        # 공공데이터포털 일부 품목/시장의 경우 scsbd_prc가 이미 1kg당 단가로 내려오거나, 
+        # 혹은 박스당 단가로 내려오는 혼선이 있습니다. 
+        # 500원대(너무 낮은 가격)로 계산되는 현상을 방지하기 위해 
+        # 만약 박스당 가격(prc)을 unit_kg로 나눈 값이 1000원 미만이라면, prc 자체가 1kg당 가격일 확률이 매우 높으므로 보정합니다.
+        
+        price_per_kg_for_this_row = prc / unit_kg
+        if price_per_kg_for_this_row < 1000 and prc > 1000:
+            # prc가 이미 1kg당 가격인 경우
+            total_won += prc * (unit_kg * qty)
+        else:
+            # prc가 박스당 가격인 경우
+            total_won += prc * qty
+            
         total_kg += unit_kg * qty
         market_nm = r.get("whsl_mrkt_nm") or market_nm
         nm = r.get("gds_sclsf_nm") or "사과"

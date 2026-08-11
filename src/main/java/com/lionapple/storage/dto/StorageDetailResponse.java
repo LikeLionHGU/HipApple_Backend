@@ -24,13 +24,15 @@ public record StorageDetailResponse(
         String qualityStatus,
         String shipmentRecommendation,
         String analysisReason,
+        String priceRecommendationReason,
         List<ShipmentAnalysisResponse> shipmentAnalyses,
         String qualityGrade,
         String qualityRipeness,
         String qualityColorDescription,
         String qualityShipmentComment,
         String qualityConfidence,
-        LocalDateTime qualityCheckedAt
+        LocalDateTime qualityCheckedAt,
+        AnalysisPeriodSummaryResponse periodSummary
 ) {
     public static StorageDetailResponse of(
             Storage storage,
@@ -40,7 +42,9 @@ public record StorageDetailResponse(
             String qualityStatus,
             String shipmentRecommendation,
             String analysisReason,
-            List<ShipmentAnalysisResponse> shipmentAnalyses
+            String priceRecommendationReason,
+            List<ShipmentAnalysisResponse> shipmentAnalyses,
+            AnalysisPeriodSummaryResponse periodSummary
     ){
         int startDate = (storage.getAnalysisStartDate() != null)
                 ? storage.getAnalysisStartDate().getDayOfMonth()
@@ -65,13 +69,15 @@ public record StorageDetailResponse(
                 qualityStatus,
                 shipmentRecommendation,
                 analysisReason,
+                priceRecommendationReason,
                 shipmentAnalyses,
                 storage.getQualityGrade(),
                 storage.getQualityRipeness(),
                 storage.getQualityColorDescription(),
                 storage.getQualityShipmentComment(),
                 storage.getQualityConfidence(),
-                storage.getQualityCheckedAt()
+                storage.getQualityCheckedAt(),
+                periodSummary
         );
     }
 

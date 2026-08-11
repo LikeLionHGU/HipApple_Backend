@@ -19,6 +19,7 @@ import com.lionapple.storage.dto.ShipmentAnalysisResponse;
 import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
+import com.lionapple.storage.dto.AnalysisPeriodSummaryResponse;
 import com.lionapple.price.PriceService;
 import com.lionapple.price.dto.PriceDashboardResponse;
 import org.springframework.http.HttpStatus;
@@ -78,12 +79,13 @@ public class StorageService {
         String qualityStatus = storage.getCondition() + " / 출하 가능";
         String analysisReason = "당도 " + storage.getBrix() + "Brix, 경도 " + storage.getHardness()
                 + "kgf, 저장방식 " + storage.getStorageMethod() + " 기준으로 품질 상태를 산정했습니다.";
+        String priceRecommendationReason = "";
 
         String shipmentRecommendation = "분석 전";
         List<ShipmentAnalysisResponse> shipmentAnalyses = new ArrayList<>();
+        PriceDashboardResponse priceData = null;
 
         if (storage.getAnalysisStartDate() != null) {
-            PriceDashboardResponse priceData = null;
             try {
                 priceData = priceService.getMarketDashboardData(LocalDate.now().toString(), "110001", "0601", "01");
             } catch (Exception e) {
@@ -96,27 +98,70 @@ public class StorageService {
             if (priceData != null && priceData.future_chart_data != null) {
                 for (PriceDashboardResponse.ChartData data : priceData.future_chart_data) {
                     LocalDate d = LocalDate.parse(data.date);
-                    // 5일 이내의 데이터만 고려
-                    if (!d.isBefore(storage.getAnalysisStartDate()) && !d.isAfter(storage.getAnalysisStartDate().plusDays(5))) {
-                        if (data.price > bestPrice) {
-                            bestPrice = data.price;
-                            bestDate = d;
-                        }
+                    if (data.price > bestPrice) {
+                        bestPrice = data.price;
+                        bestDate = d;
                     }
                 }
             }
 
-            if (storage.getPreferredDate() != null && !storage.getPreferredDate().isEmpty() && !storage.getPreferredDate().equals("미정")) {
-                shipmentRecommendation = storage.getPreferredDate();
-                bestDate = LocalDate.parse(storage.getPreferredDate());
+            int todayPrice = bestPrice;
+            if (priceData != null && priceData.future_chart_data != null) {
+                for (PriceDashboardResponse.ChartData data : priceData.future_chart_data) {
+                    if (data.date.equals(LocalDate.now().toString())) {
+                        todayPrice = data.price;
+                        break;
+                    }
+                }
+            }
+
+            shipmentRecommendation = bestDate.toString();
+            String formattedDate = bestDate.getMonthValue() + "월 " + bestDate.getDayOfMonth() + "일";
+            long diff = (long)(bestPrice - todayPrice) * storage.getAmount();
+            long diffManWon = diff / 10000;
+
+            if (diffManWon > 0) {
+                priceRecommendationReason = String.format("오늘 출하 시보다 약 %,d만 원 높은 기대 매출이 예상되어, %s 출하를 추천해요", diffManWon, formattedDate);
             } else {
-                shipmentRecommendation = bestDate.toString();
+                priceRecommendationReason = String.format("현재 가격이 가장 좋은 시기입니다. 오늘(%s) 출하를 추천해요", formattedDate);
             }
             
-            shipmentAnalyses = nearbyDates(bestDate, priceData);
+            shipmentAnalyses = futureDates(priceData);
         } else {
-            shipmentAnalyses = nearbyDates(storage.getStoreDate().toLocalDate(), null);
+            shipmentAnalyses = futureDates(null);
         }
+
+        int maxPredictedPrice = 4910;
+        int minPredictedPrice = 3850;
+        int avgPredictedPrice = 4438;
+        int priceIncreaseDays = 0;
+        int priceDecreaseDays = 0;
+        
+        if (priceData != null) {
+            List<PriceDashboardResponse.ChartData> combinedChart = new ArrayList<>();
+            if (priceData.chart_data != null) combinedChart.addAll(priceData.chart_data);
+            if (priceData.future_chart_data != null) combinedChart.addAll(priceData.future_chart_data);
+            
+            for (int i = 1; i < combinedChart.size(); i++) {
+                if (combinedChart.get(i).price > combinedChart.get(i-1).price) priceIncreaseDays++;
+                else if (combinedChart.get(i).price < combinedChart.get(i-1).price) priceDecreaseDays++;
+            }
+        }
+        
+        if (storage.getAnalysisStartDate() != null && shipmentAnalyses != null && !shipmentAnalyses.isEmpty()) {
+            maxPredictedPrice = shipmentAnalyses.stream().mapToInt(ShipmentAnalysisResponse::predictedPrice).max().orElse(maxPredictedPrice);
+            minPredictedPrice = shipmentAnalyses.stream().mapToInt(ShipmentAnalysisResponse::predictedPrice).min().orElse(minPredictedPrice);
+            avgPredictedPrice = (int) shipmentAnalyses.stream().mapToInt(ShipmentAnalysisResponse::predictedPrice).average().orElse(avgPredictedPrice);
+        }
+
+        AnalysisPeriodSummaryResponse periodSummary = new AnalysisPeriodSummaryResponse(
+                new AnalysisPeriodSummaryResponse.AiAnalysisSummary(
+                        storage.getAnalysisCount(), storage.getRecommendationCount(), maxPredictedPrice, minPredictedPrice, avgPredictedPrice, priceIncreaseDays, priceDecreaseDays
+                ),
+                new AnalysisPeriodSummaryResponse.StorageEnvironmentSummary(
+                        1.8, 91, 1650, 2, 1, 0, 94
+                )
+        );
 
         return new StorageDetailResponse(
                 storage.getStorageId(),
@@ -137,13 +182,15 @@ public class StorageService {
                 qualityStatus,
                 shipmentRecommendation,
                 analysisReason,
+                priceRecommendationReason,
                 shipmentAnalyses,
                 storage.getQualityGrade(),
                 storage.getQualityRipeness(),
                 storage.getQualityColorDescription(),
                 storage.getQualityShipmentComment(),
                 storage.getQualityConfidence(),
-                storage.getQualityCheckedAt()
+                storage.getQualityCheckedAt(),
+                periodSummary
         );
     }
 
@@ -281,7 +328,7 @@ public class StorageService {
         return date.getYear() * 10000 + date.getMonthValue() * 100 + date.getDayOfMonth();
     }
 
-    private static List<ShipmentAnalysisResponse> nearbyDates(LocalDate centerDate, PriceDashboardResponse priceData) {
+    private static List<ShipmentAnalysisResponse> futureDates(PriceDashboardResponse priceData) {
         List<ShipmentAnalysisResponse> list = new ArrayList<>();
         
         int avgPrice = 2000;
@@ -289,44 +336,22 @@ public class StorageService {
             avgPrice = priceData.price_summary.weekly_average_price;
         }
 
-        for (int offset = -2; offset <= 2; offset++) {
-            LocalDate d = centerDate.plusDays(offset);
-            int price = 0;
-            
-            if (priceData != null) {
-                // Try to find in future
-                if (priceData.future_chart_data != null) {
-                    for (PriceDashboardResponse.ChartData cd : priceData.future_chart_data) {
-                        if (cd.date.equals(d.toString())) {
-                            price = cd.price;
-                            break;
-                        }
-                    }
-                }
-                // Try to find in past if not found in future
-                if (price == 0 && priceData.chart_data != null) {
-                    for (PriceDashboardResponse.ChartData cd : priceData.chart_data) {
-                        // past date format is "m/d" like "8/7"
-                        String md = d.getMonthValue() + "/" + d.getDayOfMonth();
-                        if (cd.date.equals(md)) {
-                            price = cd.price;
-                            break;
-                        }
-                    }
-                }
+        if (priceData != null && priceData.future_chart_data != null) {
+            for (PriceDashboardResponse.ChartData cd : priceData.future_chart_data) {
+                int price = cd.price;
+                LocalDate d = LocalDate.parse(cd.date);
+                String status = price > avgPrice ? "우수" : (price < avgPrice - 500 ? "불량" : "양호");
+                String event = (d.getMonthValue() == 9 && (d.getDayOfMonth() >= 15 && d.getDayOfMonth() <= 17)) ? "명절" : null;
+                list.add(new ShipmentAnalysisResponse(cd.date, price, status, event));
             }
-
-            if (price == 0) price = avgPrice + (offset * 100);
-
-            String status = price > avgPrice ? "우수" : (price < avgPrice - 500 ? "불량" : "양호");
-            String event = (d.getMonthValue() == 9 && (d.getDayOfMonth() >= 15 && d.getDayOfMonth() <= 17)) ? "명절" : null;
-
-            list.add(new ShipmentAnalysisResponse(
-                    d.toString(),
-                    price,
-                    status,
-                    event
-            ));
+        } else {
+            for (int i = 0; i < 7; i++) {
+                LocalDate d = LocalDate.now().plusDays(i);
+                int price = avgPrice + (i * 100);
+                String status = price > avgPrice ? "우수" : (price < avgPrice - 500 ? "불량" : "양호");
+                String event = (d.getMonthValue() == 9 && (d.getDayOfMonth() >= 15 && d.getDayOfMonth() <= 17)) ? "명절" : null;
+                list.add(new ShipmentAnalysisResponse(d.toString(), price, status, event));
+            }
         }
         return list;
     }

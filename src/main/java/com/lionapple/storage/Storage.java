@@ -69,6 +69,12 @@ public class Storage {
     @Column(nullable = true)
     private LocalDate analysisStartDate; // 분석 시작일
 
+    @Column(nullable = false, columnDefinition = "int default 0")
+    private int analysisCount = 0;
+
+    @Column(nullable = false, columnDefinition = "int default 0")
+    private int recommendationCount = 0;
+
     protected Storage() {
     }
 
@@ -121,7 +127,17 @@ public class Storage {
         return preferredDate;
     }
 
-    public LocalDate getAnalysisStartDate(){return analysisStartDate;}
+    public LocalDate getAnalysisStartDate() {
+        return analysisStartDate;
+    }
+
+    public int getAnalysisCount() {
+        return analysisCount;
+    }
+
+    public int getRecommendationCount() {
+        return recommendationCount;
+    }
 
     public String getQualityGrade() {
         return qualityGrade;
@@ -171,6 +187,8 @@ public class Storage {
         if (this.analysisStartDate == null) {
             this.analysisStartDate = LocalDate.now();
         }
+        this.analysisCount++;
+        this.recommendationCount++;
     }
 
     // 분석 진행 기간(일수) 계산 (분석 시작 전이면 0일 반환)
