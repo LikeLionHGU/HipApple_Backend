@@ -3,6 +3,8 @@ import os
 import sys
 import tempfile
 import time
+from dotenv import load_dotenv
+load_dotenv()
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
