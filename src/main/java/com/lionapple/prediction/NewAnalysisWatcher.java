@@ -19,7 +19,6 @@ public class NewAnalysisWatcher {
 
     private volatile String lastProcessedGeneratedAt;
 
-    // 5분마다 forecasts.json 갱신 여부 체크
     @Scheduled(fixedDelay = 5 * 60 * 1000)
     public void checkForNewAnalysis() {
         Optional<ForecastData> dataOpt = forecastStore.load();
@@ -30,7 +29,6 @@ public class NewAnalysisWatcher {
             return;
         }
 
-        // 사과(DEFAULT_CROP_TYPE) 관련 combo 데이터를 찾아 오늘 예측치 저장
         data.combos().stream()
                 .filter(combo -> DEFAULT_CROP_TYPE.equalsIgnoreCase(combo.variety()))
                 .findFirst()
