@@ -1,10 +1,7 @@
 package com.lionapple.prediction;
 
-import com.lionapple.price.FarmMarketMapper;
 import com.lionapple.price.ForecastStore;
 import com.lionapple.price.dto.ForecastData;
-import com.lionapple.user.UserProfile;
-import com.lionapple.user.UserProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -15,14 +12,14 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class NewAnalysisWatcher {
 
+    private static final String DEFAULT_CROP_TYPE = "APPLE";
+
     private final ForecastStore forecastStore;
-    private final UserProfileRepository userProfileRepository;
     private final PricePredictionRecordService pricePredictionRecordService;
-    private final FarmMarketMapper farmMarketMapper;
 
     private volatile String lastProcessedGeneratedAt;
 
-    // 5분마다 forecasts.json이 새로 갱신됐는지 확인
+    // 5분마다 forecasts.json 갱신 여부 체크
     @Scheduled(fixedDelay = 5 * 60 * 1000)
     public void checkForNewAnalysis() {
         Optional<ForecastData> dataOpt = forecastStore.load();
@@ -30,19 +27,14 @@ public class NewAnalysisWatcher {
 
         ForecastData data = dataOpt.get();
         if (data.generatedAt().equals(lastProcessedGeneratedAt)) {
-            return; // 새 분석 아님
+            return;
         }
 
-        for (UserProfile profile : userProfileRepository.findAll()) {
-            String market = farmMarketMapper.mapMarket(profile.getFarmLocation());
-            String variety = farmMarketMapper.mapVariety(profile.getVariety(), data.varieties());
-
-            data.combos().stream()
-                    .filter(c -> c.market().equals(market) && c.variety().equals(variety))
-                    .findFirst()
-                    .ifPresent(combo -> pricePredictionRecordService.recordTodayAnalysis(
-                            profile.getUserId(), variety, combo));
-        }
+        // 사과(DEFAULT_CROP_TYPE) 관련 combo 데이터를 찾아 오늘 예측치 저장
+        data.combos().stream()
+                .filter(combo -> DEFAULT_CROP_TYPE.equalsIgnoreCase(combo.variety()))
+                .findFirst()
+                .ifPresent(combo -> pricePredictionRecordService.recordTodayAnalysis(DEFAULT_CROP_TYPE, combo));
 
         lastProcessedGeneratedAt = data.generatedAt();
     }
