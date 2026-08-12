@@ -422,6 +422,89 @@ def get_price_dashboard(
     return payload
 
 
+@app.get("/api/price/future-comments")
+def get_future_comments(
+    date: str = Query(..., description="검색 대상 날짜 (YYYY-MM-DD)"),
+    market_code: str = Query(..., description="도매시장 코드"),
+    item_code: str = Query(..., description="품목 코드"),
+    variety_code: str = Query(..., description="품종 코드")
+):
+    market_nm, variety_nm = "가락시장", "사과"
+    df = pd.DataFrame()
+    if MARKET_API_KEY:
+        try:
+            df, market_nm, variety_nm = load_series(date, market_code)
+            today = datetime.now().strftime("%Y-%m-%d")
+            if len(df) < 10 and date != today:
+                df, market_nm, variety_nm = load_series(today, market_code)
+        except Exception:
+            df = pd.DataFrame()
+    
+    if len(df) < 10:
+        df = build_demo_series(date)
+
+    model = Prophet(yearly_seasonality=False, weekly_seasonality=True, daily_seasonality=False)
+    model.fit(df)
+    future_dates = model.make_future_dataframe(periods=7, freq='D')
+    forecast = model.predict(future_dates)
+    future_forecast = forecast.tail(7)
+    
+    future_prices_str = ", ".join([f"{row['ds'].strftime('%m/%d')}: {int(row['yhat'])}원" for _, row in future_forecast.iterrows()])
+
+    llm_prompt = f"""
+    당신은 농산물 가격 예측을 설명해주는 전문 AI 비서입니다.
+    아래는 Prophet 시계열 모델이 예측한 미래 7일 치 사과({variety_nm}, {market_nm} 기준)의 예상 도매가격(kg당)입니다.
+    
+    [미래 7일 예측 가격]
+    {future_prices_str}
+    
+    위 가격 변동 흐름(상승/하락/유지)을 바탕으로, 하루하루의 트렌드를 분석해서 총 7개의 예측 문장을 만들어주세요.
+    반드시 아래 JSON 형식으로만 응답해야 하며, 다른 인사말이나 설명은 절대 포함하지 마세요.
+    
+    {{
+      "future_reports": [
+        {{ "date": "YYYY.MM.DD", "content": "해당 일자의 가격 변동이나 시장 상황에 대한 분석 1문장" }}
+      ]
+    }}
+    
+    조건:
+    - 날짜(date)는 제공된 미래 7일의 실제 날짜를 사용하세요 (YYYY.MM.DD 형식).
+    - 내용(content)은 가격이 왜 오를지, 내릴지 그럴듯한 농업 시장 논리(예: 수요 증가, 공급 부족 등)를 곁들여 작성하세요.
+    - 정확히 7개의 객체가 배열 안에 있어야 합니다.
+    """
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": llm_prompt}],
+            max_tokens=600,
+            temperature=0.6
+        )
+        content = response.choices[0].message['content'].strip()
+        
+        if content.startswith("```json"):
+            content = content[7:]
+        elif content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+            
+        parsed = json.loads(content.strip())
+        future_reports = parsed.get("future_reports", [])
+    except Exception as e:
+        print(f"LLM Error in future-comments: {e}")
+        # Fallback
+        future_reports = []
+        for i, (_, row) in enumerate(future_forecast.iterrows()):
+            d_str = row['ds'].strftime('%Y.%m.%d')
+            if i % 2 == 0:
+                future_reports.append({"date": d_str, "content": "기온 상승으로 인한 소비 증가가 가격에 일부 반영될 것으로 예측됩니다."})
+            else:
+                future_reports.append({"date": d_str, "content": "사전 물량 확보 수요 증가로 가격이 일시적인 강세를 보일 수 있습니다."})
+
+    return {"future_reports": future_reports}
+
+
 # --- 사진 기반 AI 사과 품질 판정 --------------------------------------------
 
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
