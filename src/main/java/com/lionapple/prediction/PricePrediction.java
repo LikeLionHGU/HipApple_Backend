@@ -25,15 +25,12 @@ public class PricePrediction {
     @Column(nullable = false)
     private String cropType;
 
-    // AI가 분석을 실행한 날짜 (표/차트에 보이는 날짜)
     @Column(nullable = false)
     private LocalDate predictionDate;
 
-    // predictionDate 다음날에 대한 예측가
     @Column(nullable = false)
     private Integer predictedPrice;
 
-    // predictionDate 다음날의 실제가 (다음날 배치가 채움)
     private Integer actualPrice;
 
     @Column(nullable = false)

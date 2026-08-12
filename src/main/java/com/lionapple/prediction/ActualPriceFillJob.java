@@ -18,14 +18,12 @@ public class ActualPriceFillJob {
     private final ForecastStore forecastStore;
     private final PricePredictionRepository pricePredictionRepository;
 
-    // 매일 새벽 1시 실행
     @Scheduled(cron = "0 0 1 * * *")
     @Transactional
     public void fillActualPrices() {
         LocalDate today = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
 
-        // 어제 저장된, 아직 실제값이 안 채워진 row들 (그 예측은 "오늘"에 대한 예측이었음)
         List<PricePrediction> targets = pricePredictionRepository
                 .findByPredictionDateAndActualPriceIsNull(yesterday);
         if (targets.isEmpty()) return;

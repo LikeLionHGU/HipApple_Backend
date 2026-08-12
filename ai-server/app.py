@@ -678,3 +678,37 @@ async def classify_apple_quality_endpoint(
         "probabilities": result["probabilities"],
         "topFeatures": result["top_features"],
     }
+class PricePredictionItem(BaseModel):
+    date: str = Field(..., description="날짜 (YYYY-MM-DD)")
+    predictedPrice: int = Field(..., description="AI 예측가 (원)")
+    actualPrice: int = Field(..., description="실제/현재가 (원)")
+    changeRate: float = Field(..., description="변동률 (%)")
+
+@app.get("/api/price-predictions", response_model=List[PricePredictionItem])
+def get_price_predictions(
+    date: str = Query(..., description="검색 대상 날짜 (YYYY-MM-DD)"),
+    market_code: str = Query(default="110001", description="도매시장 코드"),
+    item_code: str = Query(default="0601", description="품목 코드"),
+    variety_code: str = Query(default="01", description="품종 코드")
+):
+    summary, chart_data, future_chart_data, _, _, _, _ = process_market_analysis(
+        date, market_code, item_code, variety_code
+    )
+
+    # Prophet 미래 예측 데이터(future_chart_data)를 price-predictions 형식으로 변환
+    today_price = summary["today_price"]
+    prediction_list = []
+
+    for item in future_chart_data:
+        pred_price = item["price"]
+        # 변동률 계산: ((예측가 - 오늘가격) / 오늘가격) * 100
+        change_rate = round(((pred_price - today_price) / today_price) * 100, 1) if today_price else 0.0
+
+        prediction_list.append({
+            "date": item["date"],
+            "predictedPrice": pred_price,
+            "actualPrice": today_price,  # 기준 시점 가격
+            "changeRate": change_rate
+        })
+
+    return prediction_list
