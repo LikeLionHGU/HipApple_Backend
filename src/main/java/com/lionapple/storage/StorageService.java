@@ -123,7 +123,7 @@ public class StorageService {
             if (diffManWon > 0) {
                 priceRecommendationReason = String.format("오늘 출하 시보다 약 %,d만 원 높은 기대 매출이 예상되어, %s 출하를 추천해요", diffManWon, formattedDate);
             } else {
-                priceRecommendationReason = String.format("현재 가격이 가장 좋은 시기입니다. 오늘(%s) 출하를 추천해요", formattedDate);
+                priceRecommendationReason = String.format("현재 가격이 가장 좋은 시기입니다. (%s) 출하를 추천해요", formattedDate);
             }
             
             shipmentAnalyses = futureDates(priceData);
