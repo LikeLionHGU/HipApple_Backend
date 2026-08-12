@@ -42,6 +42,18 @@ public class UserService {
     }
 
     @Transactional
+    public LoginResponse testLogin() {
+        var existingAccount = userAccountRepository.findByGoogleSubject("test-google-id");
+        boolean isNewUser = existingAccount.isEmpty();
+        UserAccount userAccount = existingAccount.orElseGet(() -> {
+            UserAccount newUser = new UserAccount(new com.lionapple.user.dto.GoogleUserInfo(
+                    "test-google-id", "test@example.com", "테스트유저", "https://example.com/avatar.png"));
+            return userAccountRepository.save(newUser);
+        });
+        return new LoginResponse(jwtTokenProvider.createAccessToken(userAccount), isNewUser);
+    }
+
+    @Transactional
     public void saveProfile(Long userId, ProfileRequest request) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseGet(() -> new UserProfile(userId, request));
