@@ -1,6 +1,7 @@
 package com.lionapple.price;
 
 import com.lionapple.price.dto.PriceDashboardResponse;
+import com.lionapple.price.dto.PriceFutureCommentsResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,5 +33,11 @@ public class PriceService {
         } catch (RestClientException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "파이썬 AI 분석 서버 통신 실패: " + e.getMessage());
         }
+    }
+
+    public PriceFutureCommentsResponse getFutureComments(String date, String marketCode, String itemCode, String varietyCode) {
+        String url = String.format("%s/api/price/future-comments?date=%s&market_code=%s&item_code=%s&variety_code=%s",
+                aiServerUrl, date, marketCode, itemCode, varietyCode);
+        return restTemplate.getForObject(url, PriceFutureCommentsResponse.class);
     }
 }

@@ -20,8 +20,10 @@ import com.lionapple.storage.dto.StorageDetailResponse;
 import com.lionapple.storage.dto.StorageRequest;
 import com.lionapple.storage.dto.StorageSummaryResponse;
 import com.lionapple.storage.dto.AnalysisPeriodSummaryResponse;
+import com.lionapple.storage.dto.MarketAnalysisRecordResponse;
 import com.lionapple.price.PriceService;
 import com.lionapple.price.dto.PriceDashboardResponse;
+import com.lionapple.price.dto.PriceFutureCommentsResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,10 +86,17 @@ public class StorageService {
         String shipmentRecommendation = "분석 전";
         List<ShipmentAnalysisResponse> shipmentAnalyses = new ArrayList<>();
         PriceDashboardResponse priceData = null;
+        PriceFutureCommentsResponse futureCommentsData = null;
 
         if (storage.getAnalysisStartDate() != null) {
             try {
                 priceData = priceService.getMarketDashboardData(LocalDate.now().toString(), "110001", "0601", "01");
+            } catch (Exception e) {
+                // Ignore exception and use fallback
+            }
+
+            try {
+                futureCommentsData = priceService.getFutureComments(LocalDate.now().toString(), "110001", "0601", "01");
             } catch (Exception e) {
                 // Ignore exception and use fallback
             }
@@ -123,7 +132,7 @@ public class StorageService {
             if (diffManWon > 0) {
                 priceRecommendationReason = String.format("오늘 출하 시보다 약 %,d만 원 높은 기대 매출이 예상되어, %s 출하를 추천해요", diffManWon, formattedDate);
             } else {
-                priceRecommendationReason = String.format("현재 가격이 가장 좋은 시기입니다. 오늘(%s) 출하를 추천해요", formattedDate);
+                priceRecommendationReason = String.format("현재 가격이 가장 좋은 시기입니다. (%s) 출하를 추천해요", formattedDate);
             }
             
             shipmentAnalyses = futureDates(priceData);
@@ -163,6 +172,21 @@ public class StorageService {
                 )
         );
 
+        List<MarketAnalysisRecordResponse> marketAnalysisRecords = new ArrayList<>();
+        if (futureCommentsData != null && futureCommentsData.future_reports != null) {
+            for (PriceFutureCommentsResponse.FutureReport r : futureCommentsData.future_reports) {
+                marketAnalysisRecords.add(new MarketAnalysisRecordResponse(r.date, r.content));
+            }
+        } else {
+            // Fallback (dummy data for 7 days)
+            for (int i = 0; i < 7; i++) {
+                LocalDate d = LocalDate.now().plusDays(i);
+                String formattedDate = d.getYear() + "." + String.format("%02d", d.getMonthValue()) + "." + String.format("%02d", d.getDayOfMonth());
+                String content = (i % 2 == 0) ? "기온 상승으로 인한 소비 증가가 가격에 일부 반영될 것으로 예측됩니다.(HARDCoding)" : "사전 물량 확보 수요 증가로 가격이 일시적인 강세를 보일 수 있습니다.(HARDCODING)";
+                marketAnalysisRecords.add(new MarketAnalysisRecordResponse(formattedDate, content));
+            }
+        }
+
         return new StorageDetailResponse(
                 storage.getStorageId(),
                 storage.getName(),
@@ -190,7 +214,8 @@ public class StorageService {
                 storage.getQualityShipmentComment(),
                 storage.getQualityConfidence(),
                 storage.getQualityCheckedAt(),
-                periodSummary
+                periodSummary,
+                marketAnalysisRecords
         );
     }
 

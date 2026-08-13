@@ -32,7 +32,8 @@ public record StorageDetailResponse(
         String qualityShipmentComment,
         String qualityConfidence,
         LocalDateTime qualityCheckedAt,
-        AnalysisPeriodSummaryResponse periodSummary
+        AnalysisPeriodSummaryResponse periodSummary,
+        List<MarketAnalysisRecordResponse> marketAnalysisRecords
 ) {
     public static StorageDetailResponse of(
             Storage storage,
@@ -77,7 +78,8 @@ public record StorageDetailResponse(
                 storage.getQualityShipmentComment(),
                 storage.getQualityConfidence(),
                 storage.getQualityCheckedAt(),
-                periodSummary
+                periodSummary,
+                null
         );
     }
 

@@ -32,6 +32,12 @@ public class UserController {
         return userService.googleLogin(request);
     }
 
+    @PostMapping("/test-login")
+    @Operation(summary = "테스트용 로그인 (스웨거용)")
+    public LoginResponse testLogin() {
+        return userService.testLogin();
+    }
+
     @PostMapping("/profile")
     @Operation(summary = "농가 정보 입력")
     public ApiResult saveProfile(@CurrentUserId Long userId, @Valid @RequestBody ProfileRequest request) {
