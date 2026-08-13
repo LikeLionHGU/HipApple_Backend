@@ -2,6 +2,7 @@ package com.lionapple.price;
 
 import com.lionapple.price.dto.PriceDashboardResponse;
 import com.lionapple.price.dto.PriceFutureCommentsResponse;
+import com.lionapple.price.dto.PredictionHistoryResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -39,5 +40,11 @@ public class PriceService {
         String url = String.format("%s/api/price/future-comments?date=%s&market_code=%s&item_code=%s&variety_code=%s",
                 aiServerUrl, date, marketCode, itemCode, varietyCode);
         return restTemplate.getForObject(url, PriceFutureCommentsResponse.class);
+    }
+
+    public PredictionHistoryResponse[] getPredictionHistories(String marketCode, String varietyCode) {
+        String url = String.format("%s/api/price-predictions?market_code=%s&variety_code=%s",
+                aiServerUrl, marketCode, varietyCode);
+        return restTemplate.getForObject(url, PredictionHistoryResponse[].class);
     }
 }

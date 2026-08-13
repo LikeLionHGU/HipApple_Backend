@@ -1,6 +1,7 @@
 package com.lionapple.storage.dto;
 
 import com.lionapple.storage.Storage;
+import com.lionapple.price.dto.PredictionHistoryResponse;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,7 +34,8 @@ public record StorageDetailResponse(
         String qualityConfidence,
         LocalDateTime qualityCheckedAt,
         AnalysisPeriodSummaryResponse periodSummary,
-        List<MarketAnalysisRecordResponse> marketAnalysisRecords
+        List<MarketAnalysisRecordResponse> marketAnalysisRecords,
+        List<PredictionHistoryResponse> predictionHistories
 ) {
     public static StorageDetailResponse of(
             Storage storage,
@@ -45,7 +47,11 @@ public record StorageDetailResponse(
             String analysisReason,
             String priceRecommendationReason,
             List<ShipmentAnalysisResponse> shipmentAnalyses,
-            AnalysisPeriodSummaryResponse periodSummary
+            AnalysisPeriodSummaryResponse periodSummary,
+            String qualityConfidence,
+            LocalDateTime qualityCheckedAt,
+            List<MarketAnalysisRecordResponse> marketAnalysisRecords,
+            List<PredictionHistoryResponse> predictionHistories
     ){
         int startDate = (storage.getAnalysisStartDate() != null)
                 ? storage.getAnalysisStartDate().getDayOfMonth()
@@ -76,10 +82,11 @@ public record StorageDetailResponse(
                 storage.getQualityRipeness(),
                 storage.getQualityColorDescription(),
                 storage.getQualityShipmentComment(),
-                storage.getQualityConfidence(),
-                storage.getQualityCheckedAt(),
+                qualityConfidence,
+                qualityCheckedAt,
                 periodSummary,
-                null
+                marketAnalysisRecords,
+                predictionHistories
         );
     }
 

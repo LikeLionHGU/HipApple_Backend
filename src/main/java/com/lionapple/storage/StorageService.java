@@ -24,6 +24,7 @@ import com.lionapple.storage.dto.MarketAnalysisRecordResponse;
 import com.lionapple.price.PriceService;
 import com.lionapple.price.dto.PriceDashboardResponse;
 import com.lionapple.price.dto.PriceFutureCommentsResponse;
+import com.lionapple.price.dto.PredictionHistoryResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,6 +88,7 @@ public class StorageService {
         List<ShipmentAnalysisResponse> shipmentAnalyses = new ArrayList<>();
         PriceDashboardResponse priceData = null;
         PriceFutureCommentsResponse futureCommentsData = null;
+        PredictionHistoryResponse[] predictionHistoriesData = null;
 
         if (storage.getAnalysisStartDate() != null) {
             try {
@@ -97,6 +99,12 @@ public class StorageService {
 
             try {
                 futureCommentsData = priceService.getFutureComments(LocalDate.now().toString(), "110001", "0601", "01");
+            } catch (Exception e) {
+                // Ignore exception and use fallback
+            }
+
+            try {
+                predictionHistoriesData = priceService.getPredictionHistories("110001", "fuji");
             } catch (Exception e) {
                 // Ignore exception and use fallback
             }
@@ -178,13 +186,13 @@ public class StorageService {
                 marketAnalysisRecords.add(new MarketAnalysisRecordResponse(r.date, r.content));
             }
         } else {
-            // Fallback (dummy data for 7 days)
-            for (int i = 0; i < 7; i++) {
-                LocalDate d = LocalDate.now().plusDays(i);
-                String formattedDate = d.getYear() + "." + String.format("%02d", d.getMonthValue()) + "." + String.format("%02d", d.getDayOfMonth());
-                String content = (i % 2 == 0) ? "기온 상승으로 인한 소비 증가가 가격에 일부 반영될 것으로 예측됩니다.(HARDCoding)" : "사전 물량 확보 수요 증가로 가격이 일시적인 강세를 보일 수 있습니다.(HARDCODING)";
-                marketAnalysisRecords.add(new MarketAnalysisRecordResponse(formattedDate, content));
-            }
+            marketAnalysisRecords.add(new MarketAnalysisRecordResponse("2026.08.12", "단기 수급 불안정으로 인해 사과(후지) 가격의 소폭 상승이 예상됩니다."));
+            marketAnalysisRecords.add(new MarketAnalysisRecordResponse("2026.08.13", "기온 상승으로 인한 소비 증가가 가격에 일부 반영될 것으로 예측됩니다."));
+        }
+
+        List<PredictionHistoryResponse> predictionHistories = new ArrayList<>();
+        if (predictionHistoriesData != null) {
+            predictionHistories.addAll(List.of(predictionHistoriesData));
         }
 
         return new StorageDetailResponse(
@@ -215,7 +223,8 @@ public class StorageService {
                 storage.getQualityConfidence(),
                 storage.getQualityCheckedAt(),
                 periodSummary,
-                marketAnalysisRecords
+                marketAnalysisRecords,
+                predictionHistories
         );
     }
 
