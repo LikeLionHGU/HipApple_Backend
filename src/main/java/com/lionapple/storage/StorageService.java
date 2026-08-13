@@ -10,17 +10,7 @@ import java.util.Set;
 
 import java.util.Comparator;
 
-import com.lionapple.storage.dto.MajorScheduleResponse;
-import com.lionapple.storage.dto.QualityAnalysisResult;
-import com.lionapple.storage.dto.QualityCheckResponse;
-import com.lionapple.storage.dto.QualityClassifyResponse;
-import com.lionapple.storage.dto.QualityClassifyResult;
-import com.lionapple.storage.dto.ShipmentAnalysisResponse;
-import com.lionapple.storage.dto.StorageDetailResponse;
-import com.lionapple.storage.dto.StorageRequest;
-import com.lionapple.storage.dto.StorageSummaryResponse;
-import com.lionapple.storage.dto.AnalysisPeriodSummaryResponse;
-import com.lionapple.storage.dto.MarketAnalysisRecordResponse;
+import com.lionapple.storage.dto.*;
 import com.lionapple.price.PriceService;
 import com.lionapple.price.dto.PriceDashboardResponse;
 import com.lionapple.price.dto.PriceFutureCommentsResponse;
@@ -379,5 +369,51 @@ public class StorageService {
             }
         }
         return list;
+    }
+    /**
+     * '품질 및 저장 환경 변화' 카드 및 저장고 현황 조회
+     */
+    public QualityStorageStatusResponse getQualityStorageStatus(Long userId, Long storageId) {
+        Storage storage = getStorage(userId, storageId);
+        long storagePeriodDays = storagePeriodDays(storage); // DB storeDate 기준 동적 계산 (23일 등)
+
+        // 1. 저장고 현황 (온도: 2°C, 습도: 90%, 에틸렌: 0.3ppm 하드코딩 / 저장기간만 DB 계산)
+        QualityStorageStatusResponse.StorageEnvironment environment = new QualityStorageStatusResponse.StorageEnvironment(
+                storage.getName(), // 저장고 이름 (예: "A동")
+                2.0,               // 온도 (°C)
+                90.0,              // 습도 (%)
+                0.3,               // 에틸렌 (ppm)
+                storagePeriodDays, // DB storeDate 기반 계산된 저장기간
+                LocalDate.now().getYear() + "." + LocalDate.now().getMonthValue() + "." + LocalDate.now().getDayOfMonth() // 마지막 측정일
+        );
+
+        // 2. 좌측 차트: 품질 점수 변화 추이 (샘플 데이터)
+        List<QualityStorageStatusResponse.QualityTrendPoint> trendData = List.of(
+                new QualityStorageStatusResponse.QualityTrendPoint("02.15", 98.0),
+                new QualityStorageStatusResponse.QualityTrendPoint("03.15", 96.5),
+                new QualityStorageStatusResponse.QualityTrendPoint("04.15", 95.0),
+                new QualityStorageStatusResponse.QualityTrendPoint("05.15", 93.8),
+                new QualityStorageStatusResponse.QualityTrendPoint("06.15", 92.5),
+                new QualityStorageStatusResponse.QualityTrendPoint("07.15", 91.8),
+                new QualityStorageStatusResponse.QualityTrendPoint("08.02", 91.0)
+        );
+
+        // 3. 우측 카드: 현재 품질 정보 (storage의 condition 또는 qualityGrade 반영 가능)
+        String currentGrade = storage.getCondition() != null ? storage.getCondition() : "우수";
+        QualityStorageStatusResponse.CurrentMetrics currentMetrics = new QualityStorageStatusResponse.CurrentMetrics(
+                currentGrade, // "우수"
+                91,           // 품질 점수
+                100,          // 만점 (100)
+                18,           // 예상 저장 가능 기간(일)
+                "보통"        // 품질 저하 속도
+        );
+
+        return new QualityStorageStatusResponse(
+                "success",
+                "3. 품질 및 저장 환경 변화",
+                environment,
+                trendData,
+                currentMetrics
+        );
     }
 }

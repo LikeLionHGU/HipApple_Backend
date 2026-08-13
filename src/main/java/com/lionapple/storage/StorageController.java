@@ -4,12 +4,7 @@ import java.util.List;
 
 import com.lionapple.common.ApiResult;
 import com.lionapple.common.auth.CurrentUserId;
-import com.lionapple.storage.dto.MajorScheduleResponse;
-import com.lionapple.storage.dto.QualityCheckResponse;
-import com.lionapple.storage.dto.QualityClassifyResponse;
-import com.lionapple.storage.dto.StorageDetailResponse;
-import com.lionapple.storage.dto.StorageRequest;
-import com.lionapple.storage.dto.StorageSummaryResponse;
+import com.lionapple.storage.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -113,5 +108,14 @@ public class StorageController {
             @RequestPart("photo") MultipartFile photo
     ) {
         return storageService.classifyQuality(userId, storageId, photo);
+    }
+    @GetMapping("/{storageId}/quality-status")
+    @Operation(summary = "품질 및 저장 환경 변화 조회 (저장고 현황 + 시계열 차트 + 현재 품질 정보)")
+    public ResponseEntity<QualityStorageStatusResponse> getQualityStorageStatus(
+            @CurrentUserId Long userId,
+            @PathVariable Long storageId
+    ) {
+        QualityStorageStatusResponse response = storageService.getQualityStorageStatus(userId, storageId);
+        return ResponseEntity.ok(response);
     }
 }
