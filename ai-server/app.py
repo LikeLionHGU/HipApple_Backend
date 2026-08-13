@@ -17,6 +17,7 @@ import numpy as np
 from prophet import Prophet
 import openai  # OpenAI API 호출용
 import json
+import sqlite3
 from pydantic import BaseModel, Field
 from typing import List, Tuple
 
@@ -115,6 +116,48 @@ _daily_cache = {}
 _dashboard_cache = {}
 DASHBOARD_CACHE_TTL = 600  # 10분
 
+# Prediction 이력 저장용 DB
+BASE_DIR = Path(__file__).resolve().parent
+DB_FILE = BASE_DIR / "prediction_history.db"
+
+# 프론트 품종 선택값
+VARIETY_OPTIONS = {
+    "fuji": "후지",
+    "01": "후지",
+    "hongro": "홍로",
+    "02": "홍로",
+    "gala": "갈라",
+    "03": "갈라",
+    "arisoo": "아리수",
+    "04": "아리수",
+    "all": ""
+}
+
+def get_variety_keyword(variety_code: str) -> str:
+    return VARIETY_OPTIONS.get(variety_code, "후지")
+
+def init_prediction_db():
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS prediction_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                market_code TEXT NOT NULL,
+                variety_code TEXT NOT NULL,
+                predicted_price INTEGER NOT NULL,
+                actual_price INTEGER NOT NULL,
+                change_rate REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(date, market_code, variety_code)
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+init_prediction_db()
+
 
 def _get_market_api(params):
     """공공데이터 게이트웨이가 간헐적으로 502를 반환하므로 1회 재시도한다."""
@@ -132,7 +175,7 @@ def _get_market_api(params):
 def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "후지"):
     """해당 일자의 사과 경락 데이터를 조회해 kg당 가중평균가를 계산한다.
     데이터가 없으면 price=None. 조회 실패한 날은 캐시하지 않고 그 날만 건너뛴다."""
-    cache_key = (day, market_code)
+    cache_key = (day, market_code, variety_keyword)
     if cache_key in _daily_cache:
         return _daily_cache[cache_key]
 
@@ -183,11 +226,11 @@ def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "
             continue
         if prc <= 0 or unit_kg <= 0 or qty <= 0 or (r.get("unit_nm") or "kg") != "kg":
             continue
-        # 공공데이터포털 일부 품목/시장의 경우 scsbd_prc가 이미 1kg당 단가로 내려오거나, 
-        # 혹은 박스당 단가로 내려오는 혼선이 있습니다. 
-        # 500원대(너무 낮은 가격)로 계산되는 현상을 방지하기 위해 
+        # 공공데이터포털 일부 품목/시장의 경우 scsbd_prc가 이미 1kg당 단가로 내려오거나,
+        # 혹은 박스당 단가로 내려오는 혼선이 있습니다.
+        # 500원대(너무 낮은 가격)로 계산되는 현상을 방지하기 위해
         # 만약 박스당 가격(prc)을 unit_kg로 나눈 값이 1000원 미만이라면, prc 자체가 1kg당 가격일 확률이 매우 높으므로 보정합니다.
-        
+
         price_per_kg_for_this_row = prc / unit_kg
         if price_per_kg_for_this_row < 1000 and prc > 1000:
             # prc가 이미 1kg당 가격인 경우
@@ -195,7 +238,7 @@ def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "
         else:
             # prc가 박스당 가격인 경우
             total_won += prc * qty
-            
+
         total_kg += unit_kg * qty
         market_nm = r.get("whsl_mrkt_nm") or market_nm
         nm = r.get("gds_sclsf_nm") or "사과"
@@ -210,13 +253,13 @@ def fetch_daily_apple_price(day: str, market_code: str, variety_keyword: str = "
     return result
 
 
-def build_price_series(end_date: str, market_code: str):
+def build_price_series(end_date: str, market_code: str, variety_keyword: str = "후지"):
     """end_date까지 SERIES_DAYS일간의 kg당 사과 평균가 시계열을 만든다."""
     end = datetime.strptime(end_date, "%Y-%m-%d")
     days = [(end - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(SERIES_DAYS - 1, -1, -1)]
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(lambda d: fetch_daily_apple_price(d, market_code), days))
+        results = list(pool.map(lambda d: fetch_daily_apple_price(d, market_code, variety_keyword), days))
 
     records = [(d, r["price"]) for d, r in zip(days, results) if r["price"]]
     market_nm = next((r["market_nm"] for r in reversed(results) if r["market_nm"]), "가락시장")
@@ -242,29 +285,41 @@ def build_demo_series(date: str):
     return df
 
 
-def load_series(end_date: str, market_code: str):
+def load_series(end_date: str, market_code: str, variety_keyword: str = "후지"):
     """시장 코드 기준으로 시계열을 만들고, 데이터가 부족하면 전국 기준으로 재시도."""
-    df, market_nm, variety_nm = build_price_series(end_date, market_code)
+    df, market_nm, variety_nm = build_price_series(end_date, market_code, variety_keyword)
     if len(df) < 10 and market_code:
-        df, _, variety_nm = build_price_series(end_date, "")
+        df, _, variety_nm = build_price_series(end_date, "", variety_keyword)
         market_nm = "전국 도매시장"
     return df, market_nm, variety_nm
 
 
 def process_market_analysis(date: str, market_code: str, item_code: str, variety_code: str):
     market_nm, variety_nm = "가락시장", "사과"
+    variety_keyword = get_variety_keyword(variety_code)
     df = pd.DataFrame()
     if MARKET_API_KEY:
         try:
-            df, market_nm, variety_nm = load_series(date, market_code)
+            df, market_nm, variety_nm = load_series(date, market_code, variety_keyword)
             # 실시간 API는 최근 약 한 달치만 보관하므로, 오래된 날짜 요청이면 최신 데이터로 대체
             today = datetime.now().strftime("%Y-%m-%d")
             if len(df) < 10 and date != today:
-                df, market_nm, variety_nm = load_series(today, market_code)
+                df, market_nm, variety_nm = load_series(today, market_code, variety_keyword)
         except Exception:
             df = pd.DataFrame()
     is_real_data = len(df) >= 10
     if not is_real_data:
+        df = build_demo_series(date)
+
+    # Prophet 학습 전 데이터 정리
+    df = df.copy()
+    df["ds"] = pd.to_datetime(df["ds"], errors="coerce")
+    df["y"] = pd.to_numeric(df["y"], errors="coerce")
+    df = df.dropna(subset=["ds", "y"])
+    df = df.drop_duplicates(subset=["ds"])
+    df = df.sort_values("ds").reset_index(drop=True)
+
+    if len(df) < 10:
         df = build_demo_series(date)
 
     past_7_days = df.tail(7)
@@ -275,14 +330,56 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
 
     past_trend_summary = f"지난 7일간 사과 도매가는 kg당 약 {abs(price_diff):,}원 {'상승' if price_diff > 0 else '하락'}하여 현재 {price_today:,}원을 기록했습니다."
 
-    model = Prophet(yearly_seasonality=False, weekly_seasonality=True, daily_seasonality=False)
+    # --------------------------------------------------------
+    # Prediction용: 기준일 당일 가격 예측
+    # --------------------------------------------------------
+    # 기준일의 실제 가격은 학습에서 제외한다.
+    # 즉, 7/15에 분석하면 7/14까지의 데이터로 7/15를 예측한다.
+    train_df = df.iloc[:-1][["ds", "y"]].copy()
+
+    if len(train_df) < 9:
+        demo_df = build_demo_series(date)
+        train_df = demo_df.iloc[:-1][["ds", "y"]].copy()
+
+    target_date = df.iloc[-1]["ds"]
+
+    today_model = Prophet(
+        yearly_seasonality=False,
+        weekly_seasonality=True,
+        daily_seasonality=False
+    )
+    today_model.fit(train_df)
+
+    today_forecast = today_model.predict(
+        pd.DataFrame({"ds": [target_date]})
+    )
+
+    predicted_today = max(
+        0,
+        int(round(today_forecast.iloc[0]["yhat"]))
+    )
+
+    # --------------------------------------------------------
+    # Dashboard용: 기존처럼 향후 7일 중 최적 출하일 계산
+    # --------------------------------------------------------
+    model = Prophet(
+        yearly_seasonality=False,
+        weekly_seasonality=True,
+        daily_seasonality=False
+    )
     model.fit(df)
-    future_dates = model.make_future_dataframe(periods=7, freq='D')
+
+    future_dates = model.make_future_dataframe(
+        periods=7,
+        freq="D"
+    )
     forecast = model.predict(future_dates)
     future_forecast = forecast.tail(7)
 
-    best_row = future_forecast.loc[future_forecast['yhat'].idxmax()]
-    best_price = int(best_row['yhat'])
+    best_row = future_forecast.loc[
+        future_forecast["yhat"].idxmax()
+    ]
+    best_price = int(best_row["yhat"])
 
     if price_today >= best_price:
         market_pressure = "현재 가격은 단기 고점일 가능성이 매우 높으며, 향후 출하량 재개 시 가격 하락 압력이 예상됩니다. 따라서 오늘 출하가 최선의 선택입니다."
@@ -318,7 +415,7 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
             temperature=0.5
         )
         content = response.choices[0].message['content'].strip()
-        
+
         # LLM이 간혹 JSON 블록(```json) 안에 응답을 감싸서 보내는 경우를 대비해 텍스트 파싱
         if content.startswith("```json"):
             content = content[7:]
@@ -326,7 +423,7 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
             content = content[3:]
         if content.endswith("```"):
             content = content[:-3]
-            
+
         parsed = json.loads(content.strip())
         report_text = parsed.get("report_text", f"{past_trend_summary} Prophet 시계열 예측 결과, {market_pressure}")
         history_reports = parsed.get("history_reports", [])
@@ -365,7 +462,7 @@ def process_market_analysis(date: str, market_code: str, item_code: str, variety
         "monthly_range": f"최근 {len(df)}일 평균",
         "basis_date": past_7_days.iloc[-1]['ds'].strftime("%m월 %d일"),
     }
-    return summary, chart_list, future_chart_list, report_text, history_reports, market_nm, variety_nm
+    return summary, chart_list, future_chart_list, report_text, history_reports, market_nm, variety_nm, predicted_today
 
 
 @app.get("/api/price/dashboard", response_model=DashboardResponse)
@@ -375,12 +472,12 @@ def get_price_dashboard(
     item_code: str = Query(..., description="품목 코드"),
     variety_code: str = Query(..., description="품종 코드")
 ):
-    cache_key = (date, market_code)
+    cache_key = (date, market_code, item_code, variety_code)
     cached = _dashboard_cache.get(cache_key)
     if cached and time.time() - cached[0] < DASHBOARD_CACHE_TTL:
         return cached[1]
 
-    summary, chart_data, future_chart_data, ai_report, history_reports, market_nm, variety_nm = process_market_analysis(
+    summary, chart_data, future_chart_data, ai_report, history_reports, market_nm, variety_nm, _ = process_market_analysis(
         date, market_code, item_code, variety_code)
 
     change_rate = 0.0
@@ -420,6 +517,89 @@ def get_price_dashboard(
     }
     _dashboard_cache[cache_key] = (time.time(), payload)
     return payload
+
+
+@app.get("/api/price/future-comments")
+def get_future_comments(
+    date: str = Query(..., description="검색 대상 날짜 (YYYY-MM-DD)"),
+    market_code: str = Query(..., description="도매시장 코드"),
+    item_code: str = Query(..., description="품목 코드"),
+    variety_code: str = Query(..., description="품종 코드")
+):
+    market_nm, variety_nm = "가락시장", "사과"
+    df = pd.DataFrame()
+    if MARKET_API_KEY:
+        try:
+            df, market_nm, variety_nm = load_series(date, market_code, get_variety_keyword(variety_code))
+            today = datetime.now().strftime("%Y-%m-%d")
+            if len(df) < 10 and date != today:
+                df, market_nm, variety_nm = load_series(today, market_code)
+        except Exception:
+            df = pd.DataFrame()
+
+    if len(df) < 10:
+        df = build_demo_series(date)
+
+    model = Prophet(yearly_seasonality=False, weekly_seasonality=True, daily_seasonality=False)
+    model.fit(df)
+    future_dates = model.make_future_dataframe(periods=7, freq='D')
+    forecast = model.predict(future_dates)
+    future_forecast = forecast.tail(7)
+
+    future_prices_str = ", ".join([f"{row['ds'].strftime('%m/%d')}: {int(row['yhat'])}원" for _, row in future_forecast.iterrows()])
+
+    llm_prompt = f"""
+    당신은 농산물 가격 예측을 설명해주는 전문 AI 비서입니다.
+    아래는 Prophet 시계열 모델이 예측한 미래 7일 치 사과({variety_nm}, {market_nm} 기준)의 예상 도매가격(kg당)입니다.
+
+    [미래 7일 예측 가격]
+    {future_prices_str}
+
+    위 가격 변동 흐름(상승/하락/유지)을 바탕으로, 하루하루의 트렌드를 분석해서 총 7개의 예측 문장을 만들어주세요.
+    반드시 아래 JSON 형식으로만 응답해야 하며, 다른 인사말이나 설명은 절대 포함하지 마세요.
+
+    {{
+      "future_reports": [
+        {{ "date": "YYYY.MM.DD", "content": "해당 일자의 가격 변동이나 시장 상황에 대한 분석 1문장" }}
+      ]
+    }}
+
+    조건:
+    - 날짜(date)는 제공된 미래 7일의 실제 날짜를 사용하세요 (YYYY.MM.DD 형식).
+    - 내용(content)은 가격이 왜 오를지, 내릴지 그럴듯한 농업 시장 논리(예: 수요 증가, 공급 부족 등)를 곁들여 작성하세요.
+    - 정확히 7개의 객체가 배열 안에 있어야 합니다.
+    """
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": llm_prompt}],
+            max_tokens=600,
+            temperature=0.6
+        )
+        content = response.choices[0].message['content'].strip()
+
+        if content.startswith("```json"):
+            content = content[7:]
+        elif content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+
+        parsed = json.loads(content.strip())
+        future_reports = parsed.get("future_reports", [])
+    except Exception as e:
+        print(f"LLM Error in future-comments: {e}")
+        # Fallback
+        future_reports = []
+        for i, (_, row) in enumerate(future_forecast.iterrows()):
+            d_str = row['ds'].strftime('%Y.%m.%d')
+            if i % 2 == 0:
+                future_reports.append({"date": d_str, "content": "기온 상승으로 인한 소비 증가가 가격에 일부 반영될 것으로 예측됩니다."})
+            else:
+                future_reports.append({"date": d_str, "content": "사전 물량 확보 수요 증가로 가격이 일시적인 강세를 보일 수 있습니다."})
+
+    return {"future_reports": future_reports}
 
 
 # --- 사진 기반 AI 사과 품질 판정 --------------------------------------------
@@ -496,7 +676,7 @@ async def analyze_apple_quality(
         prompt_text = QUALITY_ANALYSIS_PROMPT
         if storage_info:
             prompt_text += f"\n\n참고 저장고 데이터: {storage_info}\n이 데이터를 고려하여 종합적으로 판정하세요."
-        
+
         messages = [{
             "role": "user",
             "content": [
@@ -505,7 +685,7 @@ async def analyze_apple_quality(
             ],
         }]
     else:
-        prompt_text = f"""당신은 사과 저장 데이터(당도, 경도 등)만으로 품질을 추정하는 AI 검수 보조입니다. 
+        prompt_text = f"""당신은 사과 저장 데이터(당도, 경도 등)만으로 품질을 추정하는 AI 검수 보조입니다.
 사진이 없으므로 아래 데이터에 기반해 보수적으로 판정하세요.
 반드시 아래 JSON 형식으로만 답하세요. 다른 설명, 인사말, 코드블록 표시는 절대 포함하지 마세요.
 
@@ -601,31 +781,168 @@ class PricePredictionItem(BaseModel):
     actualPrice: int = Field(..., description="실제/현재가 (원)")
     changeRate: float = Field(..., description="변동률 (%)")
 
-@app.get("/api/price-predictions", response_model=List[PricePredictionItem])
-def get_price_predictions(
-    date: str = Query(..., description="검색 대상 날짜 (YYYY-MM-DD)"),
+
+
+# ============================================================
+# Prediction 이력
+# ============================================================
+
+class PricePredictionItem(BaseModel):
+    date: str = Field(..., description="AI 분석을 실행한 날짜")
+    predictedPrice: int = Field(..., description="AI가 해당 날짜에 예측한 가격")
+    actualPrice: int = Field(..., description="해당 날짜의 실제 가격")
+    changeRate: float = Field(..., description="예측값과 실제값의 오차율 (%)")
+
+
+@app.post(
+    "/api/price-predictions/analyze",
+    response_model=PricePredictionItem,
+    summary="AI 분석 버튼 클릭 시 당일 예측값 저장"
+)
+def run_price_prediction_analysis(
+    date: str = Query(..., description="AI 분석을 실행한 날짜 (YYYY-MM-DD)"),
     market_code: str = Query(default="110001", description="도매시장 코드"),
     item_code: str = Query(default="0601", description="품목 코드"),
-    variety_code: str = Query(default="01", description="품종 코드")
+    variety_code: str = Query(default="fuji", description="품종 코드")
 ):
-    summary, chart_data, future_chart_data, _, _, _, _ = process_market_analysis(
-        date, market_code, item_code, variety_code
-    )
+    """
+    Dashboard에서 AI 분석 버튼을 눌렀을 때만 호출한다.
 
-    # Prophet 미래 예측 데이터(future_chart_data)를 price-predictions 형식으로 변환
-    today_price = summary["today_price"]
-    prediction_list = []
+    예:
+    7/15에 AI 분석 클릭
+    -> 7/14까지의 가격으로 7/15 가격 예측
+    -> 실제 7/15 가격과 비교
+    -> Prediction DB에 7/15 한 줄 저장
+    """
 
-    for item in future_chart_data:
-        pred_price = item["price"]
-        # 변동률 계산: ((예측가 - 오늘가격) / 오늘가격) * 100
-        change_rate = round(((pred_price - today_price) / today_price) * 100, 1) if today_price else 0.0
+    try:
+        (
+            summary,
+            chart_data,
+            future_chart_data,
+            ai_report,
+            history_reports,
+            market_nm,
+            variety_nm,
+            predicted_today
+        ) = process_market_analysis(
+            date,
+            market_code,
+            item_code,
+            variety_code
+        )
 
-        prediction_list.append({
-            "date": item["date"],
-            "predictedPrice": pred_price,
-            "actualPrice": today_price,  # 기준 시점 가격
-            "changeRate": change_rate
-        })
+        actual_price = int(summary["today_price"])
+        predicted_price = int(predicted_today)
 
-    return prediction_list
+        error_rate = (
+            round(
+                abs(predicted_price - actual_price)
+                / actual_price
+                * 100,
+                1
+            )
+            if actual_price
+            else 0.0
+        )
+
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        try:
+            conn.execute("PRAGMA busy_timeout=10000")
+            conn.execute(
+                """
+                INSERT INTO prediction_history (
+                    date,
+                    market_code,
+                    variety_code,
+                    predicted_price,
+                    actual_price,
+                    change_rate
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(date, market_code, variety_code)
+                DO UPDATE SET
+                    predicted_price = excluded.predicted_price,
+                    actual_price = excluded.actual_price,
+                    change_rate = excluded.change_rate,
+                    created_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    date,
+                    market_code,
+                    variety_code,
+                    predicted_price,
+                    actual_price,
+                    error_rate
+                )
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return {
+            "date": date,
+            "predictedPrice": predicted_price,
+            "actualPrice": actual_price,
+            "changeRate": error_rate
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI 분석 결과 저장 중 오류 발생: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/price-predictions",
+    response_model=List[PricePredictionItem],
+    summary="누적된 AI 가격 예측 이력 조회"
+)
+def get_price_predictions(
+    market_code: str = Query(default="110001"),
+    variety_code: str = Query(default="fuji")
+):
+    """
+    Dashboard에서 실제로 AI 분석을 눌렀던 날짜만 조회한다.
+    """
+
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        conn.row_factory = sqlite3.Row
+
+        try:
+            rows = conn.execute(
+                """
+                SELECT
+                    date,
+                    predicted_price,
+                    actual_price,
+                    change_rate
+                FROM prediction_history
+                WHERE market_code = ?
+                  AND variety_code = ?
+                ORDER BY date ASC
+                """,
+                (market_code, variety_code)
+            ).fetchall()
+        finally:
+            conn.close()
+
+        return [
+            {
+                "date": row["date"],
+                "predictedPrice": int(row["predicted_price"]),
+                "actualPrice": int(row["actual_price"]),
+                "changeRate": float(row["change_rate"])
+            }
+            for row in rows
+        ]
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"예측 기록 조회 중 오류 발생: {str(e)}"
+        )
