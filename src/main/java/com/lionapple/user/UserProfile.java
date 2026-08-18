@@ -20,9 +20,6 @@ public class UserProfile {
     private Long userId;
 
     @Column(nullable = false)
-    private String farmLocation;
-
-    @Column(nullable = false)
     private String variety;
 
     @Column(nullable = false) // 또는 false
@@ -53,10 +50,6 @@ public class UserProfile {
         return userId;
     }
 
-    public String getFarmLocation() {
-        return farmLocation;
-    }
-
     public String getVariety() {
         return variety;
     }
@@ -64,7 +57,6 @@ public class UserProfile {
     public String getFarmName() {return farmName;}
 
     public void update(ProfileRequest request) {
-        this.farmLocation = request.farmLocation();
         this.variety = request.variety();
         this.farmSize = request.farmSize();
         this.farmSizeUnit = request.farmSizeUnit();
