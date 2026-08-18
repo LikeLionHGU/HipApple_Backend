@@ -1,87 +1,61 @@
-# Lion Apple Backend
+# 🍎 HipApple
 
-Spring Boot로 구현한 API 명세서 기반 백엔드입니다.
+><img src="./assets/logo.svg" alt="HipApple Logo" width="300"/>
 
-## 실행
+> **사과, 가장 잘 팔리는 순간을 찾아주는 출하 AI**  
+> 농가의 사과 저장고를 실시간으로 관리하고, AI가 최적의 출하 시점을 추천해주는 스마트 영농 플랫폼
 
-```bash
-gradle bootRun
-```
+---
 
-서버 기본 포트는 `8080`입니다.
+## 프로젝트 소개
 
-Gradle은 Java 21로 실행해야 합니다. IntelliJ에서 빌드할 때 `Unsupported class file major version 66` 오류가 나면 `Settings > Build, Execution, Deployment > Build Tools > Gradle > Gradle JVM`을 Java 21로 바꾸세요.
+HipApple은 사과 재배 농가를 위한 스마트 영농 플랫폼입니다.  
+사과를 언제 팔아야 가장 이익인지 고민되는 농가를 위해, 도매시장 실시간 경락 데이터와 AI 예측 모델을 결합해 **최적의 출하 시점과 기대 매출**을 제안합니다.
 
-Swagger UI는 서버 실행 후 아래 주소에서 확인할 수 있습니다.
+저장고에 사과 품종, 당도, 경도, 저장방식을 입력하고 AI 분석을 시작하면, 가격 예측 · 품질 판정 · 출하 일정 관리를 한 곳에서 확인할 수 있습니다.
 
-```text
-http://localhost:8080/swagger-ui.html
-```
+---
 
-Google OAuth Client ID는 `application.yml`에 설정되어 있습니다. Client Secret은 저장소에 직접 커밋하지 않고 환경변수로 주입합니다.
+## 주요 기능
 
-```powershell
-$env:GOOGLE_CLIENT_SECRET="your-google-client-secret"
-$env:JWT_SECRET="your-long-random-jwt-secret"
-```
+### 1. AI 기반 최적 출하 시점 추천
+공공데이터포털 도매시장 실시간 경락 데이터를 수집하고 Prophet 시계열 모델로 향후 7일 가격을 예측합니다.  
+예측된 최고가 날짜를 기준으로 "오늘 대비 N만원 더 기대"와 같은 구체적인 출하 추천을 제공합니다.  
 
-MySQL 데이터베이스는 기본값으로 `localhost:3306/lion_apple`을 사용합니다.
 
-```sql
-CREATE DATABASE lion_apple CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
+### 2. 사과 품질 AI 판정
+사과 사진 한 장을 올리면 GPT-4o-mini 비전 모델이 색상, 착색도, 표면 상태를 분석해 반환 후 RandomForest 모델을 통해 **상/중/하** 등급과 출하 시점 조언을 반환합니다.  
+당도(Brix), 경도(kgf), 저장방식 등 저장고 수치 데이터를 함께 참고해 보다 종합적인 판정을 수행합니다.  
+사진 없이 수치 데이터만으로도 판정이 가능합니다.
 
-DB 계정 정보는 [application.yml](src/main/resources/application.yml)에서 수정하면 됩니다.
+### 3. 저장고 통합 관리 및 주요 일정 추적
+저장고별로 품종, 저장방식(일반/CA), 입고일, 수량, 희망 출하일을 등록하고 관리합니다.  
+AI 분석 시작 이후에는 첫 AI 예측 생성, 첫 출하 고려 추천, 최고 예측가 기록, 리포트 생성 등  
+주요 이벤트를 타임라인으로 확인할 수 있습니다.
 
-## 구현된 API
+### 4. ML 배치 기반 7거래일 가격 예측 파이프라인
+매일 1회 실행되는 배치가 공공 API에서 경락 데이터를 누적 수집하고,  
+GradientBoosting 모델(`final_daily_model2.joblib`)로 시장·품종별 향후 7거래일 가격을 예측해 `forecasts.json`으로 저장합니다.
 
-### User
+---
 
-| Method | Endpoint | 설명 | 구현 응답 |
-| --- | --- | --- | --- |
-| POST | `/user/google` | Google ID Token 검증 후 로그인 | `{ "accessToken": "jwt..." }` |
-| POST | `/user/profile` | 농가 정보 입력 | `{ "result": "Success" }` |
-| GET | `/user/me` | 사용자 정보 조회 | `{ "id": 1, "name": "박주아" }` |
+## 기술 스택
 
-## 구글 로그인 요청 예시
+### Backend
+| 분류 | 기술 |
+|------|------|
+| Java 백엔드 | Spring Boot, Spring Data JPA, JWT 인증 |
+| Python AI 서버 | FastAPI, Prophet, OpenAI GPT-4o-mini |
+| ML 배치 | scikit-learn (GradientBoosting, RandomForest), pandas |
+| DB | MySQL, SQLite |
+| 인증 | Google OAuth 2.0 |
+| API 문서 | Swagger (SpringDoc OpenAPI) |
 
-```json
-{
-  "idToken": "google-id-token-from-frontend"
-}
-```
+### Frontend
+| 분류 | 기술 |
+|------|------|
+| 마크업/스타일 | HTML, CSS |
+| 인터랙션 | JavaScript |
 
-`idToken`은 프런트에서 Google 로그인 성공 후 받은 `response.credential` 값을 전달합니다. 백엔드는 Google ID Token의 서명, audience, issuer, 만료시간을 검증한 뒤 우리 서비스 JWT accessToken을 발급합니다.
+---
 
-### Storage
-
-| Method | Endpoint | 설명 | 구현 응답 |
-| --- | --- | --- | --- |
-| POST | `/storage` | 저장고 등록 | `{ "result": "Success" }` |
-| GET | `/storage` | 전체 저장고 조회 | 저장고 요약 목록 |
-| GET | `/storage/{storageId}` | 세부적인 저장고 조회 | 온도, 습도, 에틸렌, 저장기간, 품질상태, 출하 추천일, 분석근거, 주변 날짜 포함 |
-| PUT | `/storage/{storageId}` | 저장고 수정 | `{ "result": "Success" }` |
-| DELETE | `/storage/{storageId}` | 저장고 삭제 | `{ "result": "삭제 완료" }` |
-| POST | `/storage/{storageId}/quality-check` | 사진 기반 AI 사과 품질 판정 (`multipart/form-data`, `photo` 필드) | 등급/숙성도/색상/출하 코멘트/신뢰도 |
-
-## 저장고 등록/수정 요청 예시
-
-```json
-{
-  "name": "저장고A",
-  "appleType": "부사 시스코",
-  "storeDate": "2026-07-01T00:00:00",
-  "storageMethod": "CA",
-  "brix": 15,
-  "hardness": 10,
-  "condition": "우수",
-  "amount": 5,
-  "preferredDate": "12월 중순"
-}
-```
-
-저장고 데이터는 MySQL에 저장됩니다. `spring.jpa.hibernate.ddl-auto=update`로 설정되어 있어 애플리케이션 실행 시 필요한 테이블이 자동 생성/갱신됩니다.
-
-## 사진 기반 AI 품질 판정
-
-`POST /storage/{storageId}/quality-check`에 사과 사진 한 장(`photo`, jpeg/png/webp, 8MB 이하)을 `multipart/form-data`로 업로드하면, 백엔드가 파이썬 AI 서버(`/api/quality/analyze`)로 사진을 전달해 vision LLM(OpenAI `gpt-4o-mini`)이 사진만으로 등급·숙성도·색상·출하 시점 코멘트를 판정합니다. 사진 파일 자체는 저장하지 않고, 판정 결과만 해당 저장고 레코드에 최신 값으로 반영되어 `GET /storage/{storageId}` 응답에도 함께 노출됩니다. AI 서버 쪽에는 `OPENAI_API_KEY` 환경변수가 필요합니다.

@@ -1,10 +1,3 @@
-"""사진 한 장에서 색상/밝기/질감 관련 수치 특징을 뽑아낸다.
-
-딥러닝(CLIP 등) 임베딩만큼 강력하진 않지만, 값 하나하나가 무슨 의미인지 사람이 읽을 수 있다는
-장점이 있다 — 학습된 RandomForest의 feature_importances_로 "어떤 특징이 등급 판정에
-얼마나 기여했는지"까지 확인할 수 있다. 이게 vision_llm_lab(딥러닝, 블랙박스)과 이 모듈
-(고전 CV + 트리 모델, 설명 가능)의 가장 큰 차이다.
-"""
 import numpy as np
 from PIL import Image
 
