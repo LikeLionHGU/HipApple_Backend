@@ -5,7 +5,6 @@ import jakarta.validation.constraints.Positive;
 
 public record ProfileRequest(
         @NotBlank String farmName,
-        @NotBlank String farmLocation,
         @NotBlank String variety,
         @Positive int farmSize,
         @NotBlank String farmSizeUnit,

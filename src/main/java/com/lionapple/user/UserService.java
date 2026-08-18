@@ -64,10 +64,12 @@ public class UserService {
     public UserMeResponse me(Long userId) {
         return userProfileRepository.findByUserId(userId)
                 .map(profile -> {
+                    // 1. DB에 farmName이 존재하고 비어있지 않으면 사용자가 입력한 값 그대로 사용
+                    // 2. 만약 입력된 farmName이 없으면 품종 이름(variety)만 사용 (또는 account.getName())
                     String displayName = (profile.getFarmName() != null && !profile.getFarmName().isBlank())
                             ? profile.getFarmName()
-                            : profile.getVariety() + " 농가";
-                    // 인자 3개: userId, 화면에 띄울 이름, DB의 farmName
+                            : profile.getVariety();
+
                     return new UserMeResponse(userId, displayName, profile.getFarmName());
                 })
                 .orElseGet(() -> userAccountRepository.findById(userId)
