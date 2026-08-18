@@ -25,6 +25,9 @@ public class UserProfile {
     @Column(nullable = false)
     private String variety;
 
+    @Column(nullable = false) // 또는 false
+    private String farmName;
+
     @Column(nullable = false)
     private int farmSize;
 
@@ -58,11 +61,14 @@ public class UserProfile {
         return variety;
     }
 
+    public String getFarmName() {return farmName;}
+
     public void update(ProfileRequest request) {
         this.farmLocation = request.farmLocation();
         this.variety = request.variety();
         this.farmSize = request.farmSize();
         this.farmSizeUnit = request.farmSizeUnit();
         this.shipmentType = request.shipmentType();
+        this.farmName=request.farmName();
     }
 }
