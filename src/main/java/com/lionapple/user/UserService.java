@@ -57,15 +57,21 @@ public class UserService {
     public void saveProfile(Long userId, ProfileRequest request) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseGet(() -> new UserProfile(userId, request));
-        profile.update(request);
+        profile.update(request); // UserProfile.java 내부의 update() 메서드에서도 farmName을 변경하도록 처리 필요
         userProfileRepository.save(profile);
     }
 
     public UserMeResponse me(Long userId) {
         return userProfileRepository.findByUserId(userId)
-                .map(profile -> new UserMeResponse(userId, profile.getVariety() + " 농가"))
+                .map(profile -> {
+                    String displayName = (profile.getFarmName() != null && !profile.getFarmName().isBlank())
+                            ? profile.getFarmName()
+                            : profile.getVariety() + " 농가";
+                    // 인자 3개: userId, 화면에 띄울 이름, DB의 farmName
+                    return new UserMeResponse(userId, displayName, profile.getFarmName());
+                })
                 .orElseGet(() -> userAccountRepository.findById(userId)
-                        .map(account -> new UserMeResponse(userId, account.getName()))
+                        .map(account -> new UserMeResponse(userId, account.getName(), null))
                         .orElseThrow(() -> new NoSuchElementException("사용자를 찾을 수 없습니다.")));
     }
 }
