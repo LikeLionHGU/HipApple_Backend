@@ -71,6 +71,6 @@ public class UserProfile {
         this.farmSizeUnit = request.farmSizeUnit() != null ? request.farmSizeUnit() : "평";
         this.shipmentType = request.shipmentType();
         this.farmName = request.farmName();
-        this.farmLocation = request.farmLocation();
+        this.farmLocation = request.farmLocation() != null ? request.farmLocation() : "";
     }
 }
