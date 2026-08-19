@@ -94,6 +94,20 @@ class ApiSpecificationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").isNumber())
                 .andExpect(jsonPath("$.name").value("청송 사과농장"));
+
+        // Add test for UI payload (missing farmSizeUnit, string farmSize)
+        mockMvc.perform(post("/user/profile")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "farmName":"농가이름",
+                                  "variety":"후지",
+                                  "farmSize":"100",
+                                  "shipmentType":"도매시장"
+                                }
+                                """))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -15,8 +15,8 @@ public record ProfileRequest(
         @Schema(description = "농장 규모 (단위는 farmSizeUnit 참조)", example = "10")
         @Positive int farmSize,
 
-        @Schema(description = "농장 규모 단위 (예: 평, 제곱미터, 헥타르)", example = "평")
-        @NotBlank String farmSizeUnit,
+        @Schema(description = "농장 규모 단위 (예: 평, 제곱미터, 헥타르), 생략시 평", example = "평")
+        String farmSizeUnit,
 
         @Schema(description = "출하 유형 (예: 직거래, 경매, 도매)", example = "경매")
         @NotBlank String shipmentType,

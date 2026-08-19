@@ -68,7 +68,7 @@ public class UserProfile {
     public void update(ProfileRequest request) {
         this.variety = request.variety();
         this.farmSize = request.farmSize();
-        this.farmSizeUnit = request.farmSizeUnit();
+        this.farmSizeUnit = request.farmSizeUnit() != null ? request.farmSizeUnit() : "평";
         this.shipmentType = request.shipmentType();
         this.farmName = request.farmName();
         this.farmLocation = request.farmLocation();
