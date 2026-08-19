@@ -56,24 +56,15 @@ public class UserService {
     @Transactional
     public void saveProfile(Long userId, ProfileRequest request) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
-                .orElseGet(() -> new UserProfile(userId, request));
-        profile.update(request); // UserProfile.java 내부의 update() 메서드에서도 farmName을 변경하도록 처리 필요
+                .orElseGet(() -> new UserProfile(userId));
+        profile.update(request);
         userProfileRepository.save(profile);
     }
 
     public UserMeResponse me(Long userId) {
-        return userProfileRepository.findByUserId(userId)
-                .map(profile -> {
-                    // 1. DB에 farmName이 존재하고 비어있지 않으면 사용자가 입력한 값 그대로 사용
-                    // 2. 만약 입력된 farmName이 없으면 품종 이름(variety)만 사용 (또는 account.getName())
-                    String displayName = (profile.getFarmName() != null && !profile.getFarmName().isBlank())
-                            ? profile.getFarmName()
-                            : profile.getVariety();
-
-                    return new UserMeResponse(userId, displayName, profile.getFarmName());
-                })
-                .orElseGet(() -> userAccountRepository.findById(userId)
-                        .map(account -> new UserMeResponse(userId, account.getName(), null))
-                        .orElseThrow(() -> new NoSuchElementException("사용자를 찾을 수 없습니다.")));
+        UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
+        UserAccount account = userAccountRepository.findById(userId)
+                .orElseThrow(() -> new NoSuchElementException("사용자를 찾을 수 없습니다."));
+        return UserMeResponse.of(account, profile);
     }
 }

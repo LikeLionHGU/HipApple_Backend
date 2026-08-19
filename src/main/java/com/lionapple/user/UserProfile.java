@@ -22,7 +22,7 @@ public class UserProfile {
     @Column(nullable = false)
     private String variety;
 
-    @Column(nullable = false) // 또는 false
+    @Column(nullable = true)
     private String farmName;
 
     @Column(nullable = false)
@@ -38,6 +38,10 @@ public class UserProfile {
     private String farmLocation;
 
     protected UserProfile() {
+    }
+
+    public UserProfile(Long userId) {
+        this.userId = userId;
     }
 
     public UserProfile(Long userId, ProfileRequest request) {

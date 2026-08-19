@@ -1,20 +1,21 @@
 package com.lionapple.user.dto;
+
 import com.lionapple.user.UserAccount;
 import com.lionapple.user.UserProfile;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "사용자 정보 응답")
 public record UserMeResponse(
-        Long id,
-        String name,
-        String farmName
+        @Schema(description = "사용자 ID") Long id,
+        @Schema(description = "표시 이름 (농장명이 있으면 농장명, 없으면 구글 계정 이름)") String name,
+        @Schema(description = "농장명 (프로필 미등록 시 null)") String farmName
 ) {
-    public static UserMeResponse of(UserAccount userAccount, UserProfile userProfile) {
-        return new UserMeResponse(
-                userAccount.getId(),
-                // farmName이 존재하면 farmName을 띄우고, 없으면 기존 구글 name을 기본값으로 사용
-                userProfile != null && userProfile.getFarmName() != null
-                        ? userProfile.getFarmName()
-                        : userAccount.getName(),
-                userProfile != null ? userProfile.getFarmName() : null
-        );
+    public static UserMeResponse of(UserAccount account, UserProfile profile) {
+        String farmName = (profile != null) ? profile.getFarmName() : null;
+        // 농장명이 있으면 농장명을 표시 이름으로, 없으면 구글 계정 이름 사용
+        String displayName = (farmName != null && !farmName.isBlank())
+                ? farmName
+                : account.getName();
+        return new UserMeResponse(account.getId(), displayName, farmName);
     }
 }

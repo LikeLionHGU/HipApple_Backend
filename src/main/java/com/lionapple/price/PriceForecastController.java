@@ -10,6 +10,9 @@ import com.lionapple.price.dto.PriceOptionsResponse;
 import com.lionapple.user.UserProfile;
 import com.lionapple.user.UserProfileRepository;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,7 +37,11 @@ public class PriceForecastController {
     }
 
     @GetMapping("/options")
-    @Operation(summary = "선택 가능한 도매시장·품종 목록")
+    @Operation(
+            summary = "선택 가능한 도매시장·품종 목록",
+            description = "예측 데이터가 존재하는 도매시장과 품종의 전체 목록을 반환합니다."
+    )
+    @ApiResponse(responseCode = "200", description = "조회 성공")
     public PriceOptionsResponse options() {
         return forecastStore.load()
                 .map(data -> new PriceOptionsResponse(data.markets(), data.varieties()))
@@ -42,8 +49,17 @@ public class PriceForecastController {
     }
 
     @GetMapping("/forecast")
-    @Operation(summary = "특정 도매시장·품종의 최근 시세 + 향후 7일 예측")
-    public ForecastResponse forecast(@RequestParam String market, @RequestParam String variety) {
+    @Operation(
+            summary = "특정 도매시장·품종의 시세 + 7일 예측",
+            description = "지정한 도매시장과 품종의 최근 실제 시세와 향후 7일 AI 예측 가격을 반환합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "404", description = "해당 도매시장·품종의 예측 데이터가 없음")
+    })
+    public ForecastResponse forecast(
+            @Parameter(description = "도매시장 이름 (예: 서울 가락동)", required = true) @RequestParam String market,
+            @Parameter(description = "품종 이름 (예: 후지)", required = true) @RequestParam String variety) {
         ForecastData data = forecastStore.loadOrThrow();
         ForecastData.Combo combo = find(data, market, variety)
                 .orElseThrow(() -> new ForecastNotFoundException("해당 도매시장·품종의 예측 데이터가 없습니다."));
@@ -51,7 +67,15 @@ public class PriceForecastController {
     }
 
     @GetMapping("/me")
-    @Operation(summary = "로그인 농가 정보 기반 맞춤 시세 예측")
+    @Operation(
+            summary = "맞춤 시세 예측 (로그인 사용자 기반)",
+            description = "로그인한 사용자의 농가 위치·품종 정보를 기반으로 가장 적합한 도매시장과 품종을 자동 매핑하여 시세 예측을 반환합니다. 프로필 미등록 시 기본값을 사용합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 토큰 없음 또는 만료"),
+            @ApiResponse(responseCode = "404", description = "예측 데이터가 없음")
+    })
     public ForecastResponse myForecast(@CurrentUserId Long userId) {
         ForecastData data = forecastStore.loadOrThrow();
         Optional<UserProfile> profile = userProfileRepository.findByUserId(userId);
