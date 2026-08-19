@@ -34,6 +34,9 @@ public class UserProfile {
     @Column(nullable = false)
     private String shipmentType;
 
+    @Column
+    private String farmLocation;
+
     protected UserProfile() {
     }
 
@@ -56,11 +59,14 @@ public class UserProfile {
 
     public String getFarmName() {return farmName;}
 
+    public String getFarmLocation() {return farmLocation;}
+
     public void update(ProfileRequest request) {
         this.variety = request.variety();
         this.farmSize = request.farmSize();
         this.farmSizeUnit = request.farmSizeUnit();
         this.shipmentType = request.shipmentType();
-        this.farmName=request.farmName();
+        this.farmName = request.farmName();
+        this.farmLocation = request.farmLocation();
     }
 }

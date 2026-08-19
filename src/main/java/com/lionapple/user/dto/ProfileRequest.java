@@ -8,7 +8,7 @@ public record ProfileRequest(
         @NotBlank String variety,
         @Positive int farmSize,
         @NotBlank String farmSizeUnit,
-        @NotBlank String shipmentType
-
+        @NotBlank String shipmentType,
+        String farmLocation
 ) {
 }

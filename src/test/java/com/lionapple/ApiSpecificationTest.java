@@ -78,6 +78,7 @@ class ApiSpecificationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "farmName":"청송 사과농장",
                                   "farmLocation":"경북 청송군",
                                   "variety":"부사",
                                   "farmSize":300,
@@ -92,7 +93,7 @@ class ApiSpecificationTest {
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").isNumber())
-                .andExpect(jsonPath("$.name").value("부사 농가"));
+                .andExpect(jsonPath("$.name").value("청송 사과농장"));
     }
 
     @Test
@@ -189,7 +190,7 @@ class ApiSpecificationTest {
         List<Number> storageIds = JsonPath.read(listResponse, "$[?(@.name=='저장고B')].storageId");
         long storageId = storageIds.get(0).longValue();
 
-        when(qualityAnalysisClient.analyze(any())).thenReturn(new QualityAnalysisResult(
+        when(qualityAnalysisClient.analyze(any(), any())).thenReturn(new QualityAnalysisResult(
                 "특", "완숙 직전(약 90%)", "붉은빛이 고르게 퍼져 있으며 광택 양호", "1주일 이내 출하 권장", "medium"));
 
         MockMultipartFile photo = new MockMultipartFile("photo", "apple.jpg", "image/jpeg", "fake-image-bytes".getBytes());
